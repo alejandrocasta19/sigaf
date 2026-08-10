@@ -1,0 +1,57 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: sigaf-postgres
+    restart: unless-stopped
+    # En producción NO publicar 5432 al host; solo red interna:
+    # ports: []
+    ports:
+      - "${POSTGRES_PUBLISH_PORT:-127.0.0.1:5432}:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-sigaf}
+      # En producción: export POSTGRES_PASSWORD="$(openssl rand -base64 24)"
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-sigaf_secret}
+      POSTGRES_DB: ${POSTGRES_DB:-sigaf}
+    volumes:
+      - sigaf_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    command:
+      - postgres
+      - -c
+      - password_encryption=scram-sha-256
+      - -c
+      - log_connections=on
+      - -c
+      - log_disconnections=on
+
+  app:
+    build: .
+    container_name: sigaf-app
+    restart: unless-stopped
+    ports:
+      - "${APP_PUBLISH_PORT:-3000}:3000"
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-sigaf}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-sigaf}?schema=public
+      JWT_SECRET: ${JWT_SECRET:-change-me-to-a-long-random-secret-min-32-chars}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-8h}
+      CSRF_SECRET: ${CSRF_SECRET:-change-me-csrf-secret}
+      APP_URL: ${APP_URL:-http://localhost:3000}
+      UPLOAD_DIR: /app/uploads
+      NODE_ENV: production
+      FORCE_HTTPS: ${FORCE_HTTPS:-false}
+      ALLOW_HTTP: ${ALLOW_HTTP:-true}
+      API_RATE_MAX: ${API_RATE_MAX:-120}
+      LOGIN_RATE_MAX: ${LOGIN_RATE_MAX:-20}
+    volumes:
+      - sigaf_uploads:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  sigaf_pg_data:
+  sigaf_uploads:

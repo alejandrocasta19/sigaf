@@ -1,36 +1,60 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# SIGAF — Sistema Integral de Gestión de Archivos Físicos y Documentales
 
-## Getting Started
+Monolito modular empresarial (Next.js 15 + Prisma + PostgreSQL) con RBAC, dashboards por rol y gestión documental física/electrónica.
 
-First, run the development server:
+## Requisitos
+
+- Node.js 20+
+- Docker Desktop (PostgreSQL 16)
+
+## Arranque rápido
 
 ```bash
+docker compose up -d
+cp .env.example .env   # si aún no tienes .env
+npm install
+npx prisma migrate dev
+npx prisma db seed
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Abre [http://localhost:3000](http://localhost:3000)
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Usuarios demo
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| Rol | Email | Contraseña |
+|-----|-------|------------|
+| Super Administrador | `super@sigaf.local` | `Sigaf2026!` |
+| Admin Sistema | `sistema@sigaf.local` | `Sigaf2026!` |
+| Gestión Documental | `documental@sigaf.local` | `Sigaf2026!` |
+| Jefe de Dependencia | `jefe@sigaf.local` | `Sigaf2026!` |
+| Funcionario de Dependencia | `funcionario@sigaf.local` | `Sigaf2026!` |
+| Usuario Consulta | `consulta@sigaf.local` | `Sigaf2026!` |
 
-## Learn More
+Flujo de aprobación documental: [`docs/flujo-aprobacion-documental.md`](./docs/flujo-aprobacion-documental.md).
 
-To learn more about Next.js, take a look at the following resources:
+## Arquitectura
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Monolito modular. Detalle en [`docs/estructura.md`](./docs/estructura.md).
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```
+src/
+  app/           → rutas Next.js (UI + API delgadas)
+  modules/       → dominio (identity, documents, expedientes, …)
+  shared/        → kernel, UI kit, layout, charts
+  jobs/          → tareas asíncronas
+```
 
-## Deploy on Vercel
+Cada módulo expone solo su `index.ts` (facade). La UI de dominio vive en `modules/*/ui`.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Documentación: [`docs/`](./docs/) · Ciclo vital: [`docs/ciclo-vital-ley-594.md`](./docs/ciclo-vital-ley-594.md) · **TRD (prioridad):** [`docs/gestion-trd.md`](./docs/gestion-trd.md) · Aprobación: [`docs/flujo-aprobacion-documental.md`](./docs/flujo-aprobacion-documental.md).
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Organización demo: **COOTRANSHUILA**.
+
+## Scripts
+
+- `npm run dev` — desarrollo
+- `npm run build` / `npm start` — producción
+- `npm run db:migrate` — migraciones
+- `npm run db:seed` — datos demo
+- `npm run db:reset` — reset completo BD
