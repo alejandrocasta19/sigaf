@@ -1,6 +1,7 @@
 import { getSession } from "@/shared/kernel/auth";
 import { requirePageAccess } from "@/shared/kernel/page-access";
 import { prisma } from "@/shared/kernel/prisma";
+import { USER_SECRET_OMIT } from "@/shared/kernel/user-privacy";
 import { Card, CardContent, CardHeader, CardTitle } from "@/shared/ui/card";
 import { UsersManager } from "@/modules/identity/ui/users-manager";
 
@@ -15,6 +16,7 @@ export default async function UsersPage() {
   const [users, roles, dependencies] = await Promise.all([
     prisma.user.findMany({
       where: { organizationId: user.organizationId, deletedAt: null },
+      omit: USER_SECRET_OMIT,
       include: { role: true, dependency: true },
       orderBy: { createdAt: "desc" },
       take: 100,

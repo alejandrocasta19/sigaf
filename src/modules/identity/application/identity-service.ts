@@ -1,6 +1,8 @@
 import bcrypt from "bcryptjs";
 import { prisma } from "@/shared/kernel/prisma";
 import type { SessionUser } from "@/shared/kernel/types";
+import { AppError } from "@/shared/kernel/http";
+import { USER_SECRET_OMIT } from "@/shared/kernel/user-privacy";
 
 export const ADMIN_ROLES = ["SUPER_ADMIN", "SYSTEM_ADMIN", "DOC_ADMIN"] as const;
 
@@ -8,9 +10,41 @@ export function isAdminRole(user: SessionUser) {
   return ADMIN_ROLES.includes(user.roleCode as (typeof ADMIN_ROLES)[number]);
 }
 
+async function assertCanAssignRole(actor: SessionUser, roleId: string) {
+  const [actorRole, targetRole] = await Promise.all([
+    prisma.role.findUnique({ where: { code: actor.roleCode } }),
+    prisma.role.findUnique({ where: { id: roleId } }),
+  ]);
+  if (!targetRole) throw new AppError("Rol no encontrado", 400);
+  if (!actorRole) throw new AppError("Rol del actor no encontrado", 403);
+
+  if (actor.roleCode === "SUPER_ADMIN") return targetRole;
+
+  if (targetRole.code === "SUPER_ADMIN") {
+    throw new AppError("No puede asignar el rol Super Administrador", 403);
+  }
+  if (targetRole.accessLevel >= actorRole.accessLevel) {
+    throw new AppError(
+      "No puede asignar un rol con nivel de acceso igual o superior al suyo",
+      403
+    );
+  }
+  return targetRole;
+}
+
+async function assertDependencyInOrg(organizationId: string, dependencyId: string | null | undefined) {
+  if (!dependencyId) return;
+  const dep = await prisma.dependency.findFirst({
+    where: { id: dependencyId, organizationId, deletedAt: null },
+    select: { id: true },
+  });
+  if (!dep) throw new AppError("Dependencia no válida para la organización", 400);
+}
+
 export async function listUsers(user: SessionUser) {
   return prisma.user.findMany({
     where: { organizationId: user.organizationId, deletedAt: null },
+    omit: USER_SECRET_OMIT,
     include: { role: true, dependency: true },
     orderBy: { createdAt: "desc" },
   });
@@ -27,6 +61,9 @@ export async function createUser(
     dependencyId?: string | null;
   }
 ) {
+  await assertCanAssignRole(user, data.roleId);
+  await assertDependencyInOrg(user.organizationId, data.dependencyId);
+
   const passwordHash = await bcrypt.hash(data.password, 10);
   return prisma.user.create({
     data: {
@@ -38,6 +75,7 @@ export async function createUser(
       roleId: data.roleId,
       dependencyId: data.dependencyId ?? null,
     },
+    omit: USER_SECRET_OMIT,
     include: { role: true, dependency: true },
   });
 }
@@ -146,12 +184,8 @@ export async function updateUserRole(
   });
   if (!target) throw new Error("Usuario no encontrado");
 
-  const role = await prisma.role.findUnique({ where: { id: roleId } });
-  if (!role) throw new Error("Rol no encontrado");
-
-  if (target.roleId === roleId && actor.id === userId && role.code === "SUPER_ADMIN") {
-    // ok — no change of own super admin
-  }
+  await assertCanAssignRole(actor, roleId);
+  await assertDependencyInOrg(actor.organizationId, dependencyId);
 
   return prisma.user.update({
     where: { id: userId },
@@ -159,6 +193,7 @@ export async function updateUserRole(
       roleId,
       ...(dependencyId !== undefined ? { dependencyId } : {}),
     },
+    omit: USER_SECRET_OMIT,
     include: { role: true, dependency: true },
   });
 }
@@ -184,6 +219,7 @@ export async function setUserStatus(
   const updated = await prisma.user.update({
     where: { id: userId },
     data: { status },
+    omit: USER_SECRET_OMIT,
     include: { role: true, dependency: true },
   });
 

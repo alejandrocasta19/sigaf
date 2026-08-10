@@ -545,7 +545,14 @@ export async function rejectByArchive(
 
 const inboxInclude = {
   dependency: true,
-  submittedBy: true,
+  submittedBy: {
+    select: {
+      id: true,
+      firstName: true,
+      lastName: true,
+      email: true,
+    },
+  },
   documentType: true,
   series: true,
   versions: {
@@ -646,6 +653,7 @@ export async function listTeamMembers(user: SessionUser) {
       deletedAt: null,
       OR: [{ managerId: user.id }, { role: { code: "DEPT_WORKER" } }],
     },
+    omit: { passwordHash: true, mfaSecret: true },
     include: { role: true },
     orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
   });
@@ -669,7 +677,9 @@ export function workflowActionLabel(action: WorkflowAction) {
 export type WorkflowInboxItem = Prisma.DocumentGetPayload<{
   include: {
     dependency: true;
-    submittedBy: true;
+    submittedBy: {
+      select: { id: true; firstName: true; lastName: true; email: true };
+    };
     documentType: true;
     series: true;
     versions: {

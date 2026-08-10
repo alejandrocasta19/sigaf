@@ -37,12 +37,14 @@ export async function POST(req: NextRequest) {
     }
 
     const buffer = Buffer.from(await file.arrayBuffer());
-    assertAllowedUpload(file, buffer);
+    const validated = await assertAllowedUpload(file, buffer, {
+      allowedExt: [".xlsx", ".xls", ".csv"],
+    });
 
     await saveUpload({
       orgId: user.organizationId,
       category: "imports",
-      originalName: file.name,
+      originalName: validated.safeOriginalName,
       buffer,
     });
 

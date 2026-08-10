@@ -58,7 +58,13 @@ export async function listExpedientes(params: {
     take: take + 1,
     ...(params.cursor ? { cursor: { id: params.cursor }, skip: 1 } : {}),
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-    include: { dependency: true, responsible: true, _count: { select: { documents: true } } },
+    include: {
+      dependency: true,
+      responsible: {
+        select: { id: true, firstName: true, lastName: true, email: true },
+      },
+      _count: { select: { documents: true } },
+    },
   });
 
   const hasMore = items.length > take;
@@ -105,7 +111,9 @@ export async function getExpediente(user: SessionUser, id: string) {
     where: { id, ...expedienteScope(user) },
     include: {
       dependency: true,
-      responsible: true,
+      responsible: {
+        select: { id: true, firstName: true, lastName: true, email: true },
+      },
       documents: { where: { deletedAt: null }, take: 50 },
     },
   });

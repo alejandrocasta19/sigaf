@@ -13,6 +13,7 @@ export default async function ProfilePage() {
 
   const dbUser = await prisma.user.findUnique({
     where: { id: user.id },
+    omit: { passwordHash: true, mfaSecret: true },
     include: { role: true, dependency: true, organization: true },
   });
 

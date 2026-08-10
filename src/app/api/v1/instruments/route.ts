@@ -40,8 +40,13 @@ export async function POST(req: NextRequest) {
       const file = form.get("file");
       if (!id || !(file instanceof File)) throw new AppError("id y file requeridos", 400);
       const buf = Buffer.from(await file.arrayBuffer());
+      const { assertAllowedUpload } = await import("@/shared/kernel/upload-policy");
+      const validated = await assertAllowedUpload(
+        { name: file.name, type: file.type },
+        buf
+      );
       const updated = await uploadInstrumentFile(user, id, {
-        originalName: file.name,
+        originalName: validated.safeOriginalName,
         buffer: buf,
       });
       await writeAudit({

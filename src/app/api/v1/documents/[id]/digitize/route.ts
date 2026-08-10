@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { getSession, requirePermission } from "@/shared/kernel/auth";
 import { AppError, jsonError, jsonOk, writeAudit } from "@/shared/kernel/http";
 import { digitizeDocument } from "@/modules/documents/application/digitize-service";
+import { assertAllowedUpload } from "@/shared/kernel/upload-policy";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -17,10 +18,14 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     if (!file || !(file instanceof File)) throw new AppError("Adjunte un archivo", 400);
 
     const buffer = Buffer.from(await file.arrayBuffer());
+    const validated = await assertAllowedUpload(file, buffer, {
+      allowedExt: [".pdf", ".png", ".jpg", ".jpeg", ".webp", ".gif"],
+    });
+
     const doc = await digitizeDocument(user, id, {
-      originalName: file.name,
+      originalName: validated.safeOriginalName,
       buffer,
-      mimeType: file.type,
+      mimeType: validated.detectedMime,
     });
 
     await writeAudit({

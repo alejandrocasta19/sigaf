@@ -32,7 +32,13 @@ export default async function ExpedientesPage() {
   const [expedientes, dependencies] = await Promise.all([
     prisma.expediente.findMany({
       where,
-      include: { dependency: true, responsible: true, _count: { select: { documents: true } } },
+      include: {
+        dependency: true,
+        responsible: {
+          select: { id: true, firstName: true, lastName: true, email: true },
+        },
+        _count: { select: { documents: true } },
+      },
       orderBy: { createdAt: "desc" },
       take: 100,
     }),

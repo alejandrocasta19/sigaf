@@ -77,6 +77,7 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
     const updated = await prisma.user.update({
       where: { id },
       data,
+      omit: { passwordHash: true, mfaSecret: true },
       include: { role: true, dependency: true },
     });
 

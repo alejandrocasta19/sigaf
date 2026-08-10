@@ -194,10 +194,38 @@ export async function getDocument(user: SessionUser, id: string) {
       documentType: true,
       folder: true,
       series: true,
-      versions: { orderBy: { version: "desc" }, include: { createdBy: true } },
+      versions: {
+        orderBy: { version: "desc" },
+        include: {
+          createdBy: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              email: true,
+            },
+          },
+        },
+      },
       attachments: { orderBy: { createdAt: "desc" } },
-      responsible: true,
-      submittedBy: true,
+      responsible: {
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          email: true,
+          status: true,
+        },
+      },
+      submittedBy: {
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          email: true,
+          status: true,
+        },
+      },
       subseries: true,
       workflowEvents: {
         orderBy: { createdAt: "asc" },
@@ -234,7 +262,7 @@ export async function addDocumentVersion(
         changeNote: file.changeNote,
         createdById: user.id,
       },
-      include: { createdBy: true },
+      include: { createdBy: { select: { id: true, firstName: true, lastName: true } } },
     }),
     prisma.document.update({
       where: { id: documentId },

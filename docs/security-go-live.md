@@ -16,7 +16,9 @@ Un pentest externo real lo realiza una firma especializada; aquí hay una audito
 | MFA TOTP opcional por usuario (`/settings/security`) | Sí |
 | Alertas in-app tras ≥5 logins fallidos / 15 min | Sí |
 | Gates de página (users, roles, backups, audit, settings, orgs, licenses, deps) | Sí |
-| Uploads: tamaño + allowlist | Sí |
+| Uploads: tamaño + magic bytes + anti double-ext + digitize/instruments | Sí |
+| Omit passwordHash/mfaSecret en respuestas User | Sí |
+| Anti-escalada de roles (accessLevel) | Sí |
 | Generador de secretos | `npm run secrets:generate` |
 | Auditoría interna automatizada | `npm run test:security` |
 

@@ -37,12 +37,12 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     }
 
     const buffer = Buffer.from(await file.arrayBuffer());
-    assertAllowedUpload(file, buffer);
+    const validated = await assertAllowedUpload(file, buffer);
 
     const saved = await saveUpload({
       orgId: user.organizationId,
       category: "versions",
-      originalName: file.name,
+      originalName: validated.safeOriginalName,
       buffer,
     });
 

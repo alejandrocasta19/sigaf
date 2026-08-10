@@ -1,5 +1,4 @@
 import { NextRequest } from "next/server";
-import { NextRequest } from "next/server";
 import { getSession, requirePermission } from "@/shared/kernel/auth";
 import { AppError, jsonError, jsonOk, writeAudit } from "@/shared/kernel/http";
 import { addDocumentAttachment, getDocument } from "@/modules/documents";
@@ -36,19 +35,19 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     }
 
     const buffer = Buffer.from(await file.arrayBuffer());
-    assertAllowedUpload(file, buffer);
+    const validated = await assertAllowedUpload(file, buffer);
 
     const saved = await saveUpload({
       orgId: user.organizationId,
       category: "attachments",
-      originalName: file.name,
+      originalName: validated.safeOriginalName,
       buffer,
     });
 
     const attachment = await addDocumentAttachment(user, id, {
-      name: file.name,
+      name: validated.safeOriginalName,
       relativePath: saved.relativePath,
-      mimeType: file.type || undefined,
+      mimeType: validated.detectedMime,
       sizeBytes: saved.sizeBytes,
     });
     if (!attachment) throw new AppError("Documento no encontrado", 404);
