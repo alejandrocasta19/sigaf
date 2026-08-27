@@ -179,6 +179,81 @@ describe("generateDocumentCode concurrency-safe format", () => {
   });
 });
 
+describe("retention policy", () => {
+  it("computeManagementDueAt suma años AG desde evento", async () => {
+    const {
+      resolveRetentionStartDate,
+      computeManagementDueAt,
+      computeFullRetentionEnd,
+    } = await import("../src/shared/kernel/retention-policy");
+
+    const start = new Date("2020-06-15");
+    expect(resolveRetentionStartDate({ event: "EXPEDIENTE_CLOSE", closedAt: start }).toISOString()).toBe(
+      start.toISOString()
+    );
+    expect(
+      resolveRetentionStartDate({
+        event: "LAST_DOCUMENT",
+        lastDocumentDate: new Date("2021-03-01"),
+      }).toISOString()
+    ).toBe(new Date("2021-03-01").toISOString());
+
+    const due = computeManagementDueAt(start, 2);
+    expect(due.getFullYear()).toBe(2022);
+
+    const full = computeFullRetentionEnd(start, 2, 8);
+    expect(full.getFullYear()).toBe(2030);
+  });
+});
+
+describe("expediente readiness foliación física", () => {
+  it("exige foliación física trazada para transferencia", async () => {
+    const { evaluateExpedienteReadiness } = await import("../src/shared/kernel/expediente-cycle");
+
+    const base = {
+      id: "e1",
+      code: "EXP-001",
+      name: "Test",
+      subject: "Test",
+      status: "CLOSED",
+      processSteps: {
+        IDENTIFICATION: true,
+        CLASSIFICATION: true,
+        ORDERING: true,
+        FOLIATION: true,
+        LABELING: true,
+        FUID_INVENTORY: true,
+      },
+      foliationVerified: true,
+      chronologicalOrder: true,
+      folderNumber: "01",
+      boxCode: "C-001",
+      retentionDueAt: new Date("2020-01-01"),
+      retentionStartDate: new Date("2018-01-01"),
+      closedAt: new Date("2019-01-01"),
+      documents: [{ id: "d1" }],
+      hasValidatedInventory: true,
+    };
+
+    const sinFisica = evaluateExpedienteReadiness({
+      ...base,
+      physicalFoliationDone: false,
+      foliationBy: null,
+    });
+    expect(sinFisica.checks.find((c) => c.key === "physicalFoliation")?.passed).toBe(false);
+    expect(sinFisica.ready).toBe(false);
+
+    const conFisica = evaluateExpedienteReadiness({
+      ...base,
+      physicalFoliationDone: true,
+      foliationBy: "Juan Pérez",
+      foliationAt: new Date("2019-02-01"),
+    });
+    expect(conFisica.checks.find((c) => c.key === "physicalFoliation")?.passed).toBe(true);
+    expect(conFisica.ready).toBe(true);
+  });
+});
+
 describe("préstamo 24h", () => {
   it("LOAN_DURATION_MS es 24 horas", async () => {
     const { LOAN_DURATION_MS, isLoanGestora } = await import(

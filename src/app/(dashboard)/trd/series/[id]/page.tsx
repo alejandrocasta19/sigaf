@@ -37,7 +37,7 @@ export default async function TrdSeriesDetailPage({ params }: Props) {
         >
           <ArrowLeft className="h-4 w-4" /> Volver a TRD
         </Link>
-        <h1 className="text-2xl font-bold text-slate-900">
+        <h1 className="page-title text-xl font-bold text-slate-900 sm:text-2xl">
           Serie {series.code} — {series.name}
         </h1>
         <p className="text-sm text-slate-500">

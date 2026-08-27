@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assertSafeFilename, assertAllowedUpload } from "@/shared/kernel/upload-policy";
+import { assertSafeFilename, assertAllowedUpload, assertUploadIntent } from "@/shared/kernel/upload-policy";
 
 describe("upload-policy", () => {
   it("rechaza doble extensión peligrosa archivo.pdf.exe", () => {
@@ -27,5 +27,11 @@ describe("upload-policy", () => {
     await expect(
       assertAllowedUpload({ name: "a.pdf", type: "application/pdf" }, buf)
     ).rejects.toThrow();
+  });
+
+  it("rechaza intent por tamaño antes de firmar", () => {
+    expect(() =>
+      assertUploadIntent({ name: "huge.pdf", type: "application/pdf", size: 999 * 1024 * 1024 })
+    ).toThrow(/máximo/i);
   });
 });

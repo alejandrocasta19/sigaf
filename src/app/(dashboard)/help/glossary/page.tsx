@@ -11,7 +11,7 @@ export default async function GlossaryPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-slate-900">Glosario archivístico</h1>
+        <h1 className="page-title text-xl font-bold text-slate-900 sm:text-2xl">Glosario archivístico</h1>
         <p className="text-sm text-slate-500">
           Conceptos TRD ·{" "}
           <Link href="/trd" className="text-emerald-700 hover:underline">

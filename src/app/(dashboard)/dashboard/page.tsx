@@ -31,6 +31,7 @@ import { Avatar } from "@/shared/ui/avatar";
 import { Progress } from "@/shared/ui/progress";
 import { formatDate } from "@/shared/kernel/utils";
 import { SuperAdminExtras } from "@/modules/system-admin/ui/role-dashboards";
+import { RetentionAlertsPanel } from "@/modules/system-admin/ui/retention-alerts-panel";
 
 export default async function DashboardPage() {
   const user = await getSession();
@@ -89,7 +90,7 @@ function SuperAdminDashboard({ userName, data }: { userName: string; data: DashD
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="flex items-center gap-2 text-2xl font-bold text-slate-900">
+          <h1 className="page-title flex items-center gap-2 text-xl font-bold text-slate-900 sm:text-2xl">
             Panel de Control - Super Administrador
             <BadgeCheck className="h-6 w-6 text-blue-600" />
           </h1>
@@ -98,12 +99,12 @@ function SuperAdminDashboard({ userName, data }: { userName: string; data: DashD
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
-        <KpiCard title="Total Documentos" value={data.kpis.totalDocuments} trend="+12.5%" icon={FileText} iconClass="bg-blue-50 text-blue-600" />
-        <KpiCard title="Total Expedientes" value={data.kpis.totalExpedientes} trend="+8.1%" icon={FolderOpen} iconClass="bg-emerald-50 text-emerald-600" />
-        <KpiCard title="Total Cajas" value={data.kpis.totalBoxes} trend="+5.4%" icon={Package} iconClass="bg-violet-50 text-violet-600" />
-        <KpiCard title="Total Carpetas" value={data.kpis.totalFolders} trend="+6.7%" icon={Folder} iconClass="bg-orange-50 text-orange-600" />
-        <KpiCard title="Usuarios Activos" value={data.kpis.activeUsers} trend="+9.2%" icon={Users} iconClass="bg-sky-50 text-sky-600" />
-        <KpiCard title="Eventos Auditoría" value={data.kpis.auditCount} trend="+15.3%" icon={History} iconClass="bg-rose-50 text-rose-600" />
+        <KpiCard title="Total Documentos" value={data.kpis.totalDocuments} icon={FileText} iconClass="bg-blue-50 text-blue-600" />
+        <KpiCard title="Total Expedientes" value={data.kpis.totalExpedientes} icon={FolderOpen} iconClass="bg-emerald-50 text-emerald-600" />
+        <KpiCard title="Total Cajas" value={data.kpis.totalBoxes} icon={Package} iconClass="bg-violet-50 text-violet-600" />
+        <KpiCard title="Total Carpetas" value={data.kpis.totalFolders} icon={Folder} iconClass="bg-orange-50 text-orange-600" />
+        <KpiCard title="Usuarios Activos" value={data.kpis.activeUsers} icon={Users} iconClass="bg-sky-50 text-sky-600" />
+        <KpiCard title="Eventos Auditoría" value={data.kpis.auditCount} icon={History} iconClass="bg-rose-50 text-rose-600" />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-4">
@@ -154,6 +155,14 @@ function SuperAdminDashboard({ userName, data }: { userName: string; data: DashD
           </CardContent>
         </Card>
       </div>
+
+      <RetentionAlertsPanel
+        overdueCount={data.kpis.retentionOverdue}
+        dueSoonCount={data.kpis.retentionDueSoon}
+        withoutSeriesCount={data.kpis.withoutSeries}
+        overdue={data.retention.overdue}
+        dueSoon={data.retention.dueSoon}
+      />
 
       <div className="grid gap-4 lg:grid-cols-3">
         <Card className="lg:col-span-2">
@@ -285,20 +294,28 @@ function DocAdminDashboard({ userName, data }: { userName: string; data: DashDat
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-slate-900">Dashboard - Gestión Documental</h1>
+        <h1 className="page-title text-xl font-bold text-slate-900 sm:text-2xl">Dashboard - Gestión Documental</h1>
         <p className="text-sm text-slate-500">
           Bienvenida, {userName}. Resumen de la gestión archivística.
         </p>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
-        <KpiCard title="Documentos Registrados" value={data.kpis.totalDocuments} trend="+12.3%" icon={FileText} />
-        <KpiCard title="Expedientes Activos" value={data.kpis.totalExpedientes} trend="+8.7%" icon={FolderOpen} iconClass="bg-emerald-50 text-emerald-600" />
-        <KpiCard title="Cajas Archivadas" value={data.kpis.totalBoxes} trend="+5.2%" icon={Package} iconClass="bg-violet-50 text-violet-600" />
-        <KpiCard title="Carpetas" value={data.kpis.totalFolders} trend="+3.1%" icon={Folder} iconClass="bg-orange-50 text-orange-600" />
-        <KpiCard title="Transferencias" value={data.kpis.pendingTransfers} note="Pendientes" icon={ArrowUpRight} iconClass="bg-amber-50 text-amber-600" />
-        <KpiCard title="Préstamos Activos" value={data.kpis.activeLoans} note="Revisar vencimientos" icon={History} iconClass="bg-sky-50 text-sky-600" />
+        <KpiCard title="Documentos Registrados" value={data.kpis.totalDocuments} icon={FileText} />
+        <KpiCard title="Expedientes Activos" value={data.kpis.totalExpedientes} icon={FolderOpen} iconClass="bg-emerald-50 text-emerald-600" />
+        <KpiCard title="Cajas Archivadas" value={data.kpis.totalBoxes} icon={Package} iconClass="bg-violet-50 text-violet-600" />
+        <KpiCard title="Carpetas" value={data.kpis.totalFolders} icon={Folder} iconClass="bg-orange-50 text-orange-600" />
+        <KpiCard title="Retención vencida" value={data.kpis.retentionOverdue} note="AG por transferir" icon={AlertTriangle} iconClass="bg-red-50 text-red-600" />
+        <KpiCard title="Sin serie TRD" value={data.kpis.withoutSeries} note="Clasificar" icon={History} iconClass="bg-amber-50 text-amber-600" />
       </div>
+
+      <RetentionAlertsPanel
+        overdueCount={data.kpis.retentionOverdue}
+        dueSoonCount={data.kpis.retentionDueSoon}
+        withoutSeriesCount={data.kpis.withoutSeries}
+        overdue={data.retention.overdue}
+        dueSoon={data.retention.dueSoon}
+      />
 
       <div className="grid gap-4 lg:grid-cols-4">
         <DonutChartCard title="Documentos por Dependencia" data={data.charts.byDependency} />
@@ -310,17 +327,18 @@ function DocAdminDashboard({ userName, data }: { userName: string; data: DashDat
           </CardHeader>
           <CardContent className="space-y-2">
             {[
-              ["Aprobar transferencia primaria", 3],
-              ["Revisar préstamos por vencer", 4],
-              ["Validar inventarios", 2],
-              ["Actualizar TRD", 1],
+              ["Retención AG vencida", data.kpis.retentionOverdue],
+              ["Retención por vencer (90 d)", data.kpis.retentionDueSoon],
+              ["Expedientes sin serie TRD", data.kpis.withoutSeries],
+              ["Transferencias pendientes", data.kpis.pendingTransfers],
+              ["Préstamos activos", data.kpis.activeLoans],
             ].map(([label, count]) => (
               <div
                 key={String(label)}
                 className="flex items-center justify-between rounded-lg border border-slate-100 px-3 py-2.5 text-sm"
               >
                 <span className="text-slate-700">{label}</span>
-                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-emerald-600 text-xs font-bold text-white">
+                <span className="flex h-6 min-w-6 items-center justify-center rounded-full bg-emerald-600 px-1.5 text-xs font-bold text-white">
                   {count}
                 </span>
               </div>
@@ -394,7 +412,7 @@ function DeptHeadDashboard({
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">
+          <h1 className="page-title text-xl font-bold text-slate-900 sm:text-2xl">
             Dashboard - {dependency || "Dependencia"}
           </h1>
           <p className="text-sm text-slate-500">
@@ -410,10 +428,10 @@ function DeptHeadDashboard({
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
-        <KpiCard title="Documentos" value={data.kpis.totalDocuments} trend="+12.6%" icon={FileText} />
-        <KpiCard title="Expedientes" value={data.kpis.totalExpedientes} trend="+8.4%" icon={FolderOpen} iconClass="bg-emerald-50 text-emerald-600" />
-        <KpiCard title="Cajas" value={data.kpis.totalBoxes} trend="+5.2%" icon={Package} iconClass="bg-violet-50 text-violet-600" />
-        <KpiCard title="Carpetas" value={data.kpis.totalFolders} trend="+7.1%" icon={Folder} iconClass="bg-orange-50 text-orange-600" />
+        <KpiCard title="Documentos" value={data.kpis.totalDocuments} icon={FileText} />
+        <KpiCard title="Expedientes" value={data.kpis.totalExpedientes} icon={FolderOpen} iconClass="bg-emerald-50 text-emerald-600" />
+        <KpiCard title="Cajas" value={data.kpis.totalBoxes} icon={Package} iconClass="bg-violet-50 text-violet-600" />
+        <KpiCard title="Carpetas" value={data.kpis.totalFolders} icon={Folder} iconClass="bg-orange-50 text-orange-600" />
         <KpiCard title="Préstamos Activos" value={data.kpis.activeLoans} note="Revisar vencimientos" icon={History} iconClass="bg-sky-50 text-sky-600" />
         <KpiCard title="Transferencias" value={data.kpis.pendingTransfers} note="En proceso" icon={ArrowUpRight} iconClass="bg-rose-50 text-rose-600" />
       </div>
@@ -468,7 +486,7 @@ function DeptWorkerDashboard({
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">
+          <h1 className="page-title text-xl font-bold text-slate-900 sm:text-2xl">
             Dashboard — {dependency || "Dependencia"}
           </h1>
           <p className="text-sm text-slate-500">
@@ -562,7 +580,7 @@ function ConsultDashboard({ userName, data }: { userName: string; data: DashData
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-slate-900">Dashboard - Consulta</h1>
+        <h1 className="page-title text-xl font-bold text-slate-900 sm:text-2xl">Dashboard - Consulta</h1>
         <p className="text-sm text-slate-500">
           Bienvenido, {userName}. Consulta documentos y expedientes autorizados.
         </p>

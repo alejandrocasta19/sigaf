@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { z } from "zod";
-import { getSession } from "@/shared/kernel/auth";
+import { getSession, requirePermission } from "@/shared/kernel/auth";
 import { AppError, jsonError, jsonOk, writeAudit } from "@/shared/kernel/http";
 import {
   advanceDisposalProcess,
@@ -15,6 +15,7 @@ export async function GET(req: NextRequest) {
   try {
     const user = await getSession();
     if (!user) throw new AppError("No autenticado", 401);
+    requirePermission(user, "instruments.read");
 
     const view = req.nextUrl.searchParams.get("view") ?? "table";
     const dependencyId = req.nextUrl.searchParams.get("dependencyId");
@@ -50,6 +51,7 @@ export async function POST(req: NextRequest) {
   try {
     const user = await getSession();
     if (!user) throw new AppError("No autenticado", 401);
+    requirePermission(user, "instruments.read");
     const body = disposalSchema.parse(await req.json());
 
     if (body.action === "create") {

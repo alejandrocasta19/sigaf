@@ -1,5 +1,5 @@
 import ExcelJS from "exceljs";
-import { FinalDisposition, Prisma } from "@prisma/client";
+import { FinalDisposition, Prisma, SeriesKind } from "@prisma/client";
 import { prisma } from "@/shared/kernel/prisma";
 import type { SessionUser } from "@/shared/kernel/types";
 import { AppError } from "@/shared/kernel/http";
@@ -24,6 +24,7 @@ export type SeriesInput = {
   retentionManagementYears?: number | null;
   retentionCentralYears?: number | null;
   finalDisposition?: FinalDisposition;
+  seriesKind?: SeriesKind;
   valueAdministrative?: boolean;
   valueJuridical?: boolean;
   valueLegal?: boolean;
@@ -56,7 +57,7 @@ export type TypologyInput = {
   active?: boolean;
 };
 
-/** Reglas: histórico → conservación; fiscal/contable alarga retención; solo admin → eliminación posible */
+/** Reglas informativas (referencia). La retención aplicada proviene de la TRD aprobada, no de este cálculo. */
 export function calculateRetentionFromValues(values: {
   valueAdministrative?: boolean;
   valueJuridical?: boolean;
@@ -107,6 +108,32 @@ export function calculateRetentionFromValues(values: {
   };
 }
 
+/** Retención oficial TRD — serie/subserie como fuente única de verdad (sin recalcular por valores documentales). */
+export function resolveTrdRetention(params: {
+  retentionManagementYears?: number | null;
+  retentionCentralYears?: number | null;
+  finalDisposition?: FinalDisposition | null;
+  seriesFallback?: {
+    retentionManagementYears?: number | null;
+    retentionCentralYears?: number | null;
+    finalDisposition?: FinalDisposition | null;
+  };
+}): { ag: number; ac: number; disposition: FinalDisposition } {
+  const ag =
+    params.retentionManagementYears ??
+    params.seriesFallback?.retentionManagementYears ??
+    2;
+  const ac =
+    params.retentionCentralYears ??
+    params.seriesFallback?.retentionCentralYears ??
+    8;
+  const disposition =
+    params.finalDisposition ??
+    params.seriesFallback?.finalDisposition ??
+    ("CONSERVATION" as FinalDisposition);
+  return { ag, ac, disposition };
+}
+
 export async function applyTrdCalculationToDocument(
   user: SessionUser,
   documentId: string
@@ -120,31 +147,32 @@ export async function applyTrdCalculationToDocument(
   const source = doc.subseries ?? doc.series;
   if (!source) throw new AppError("El documento no tiene serie/subserie TRD", 400);
 
-  const calc = calculateRetentionFromValues({
-    valueAdministrative: source.valueAdministrative,
-    valueJuridical: source.valueJuridical,
-    valueLegal: source.valueLegal,
-    valueFiscal: source.valueFiscal,
-    valueAccounting: source.valueAccounting,
-    valueHistorical: source.valueHistorical,
-    baseAg: source.retentionManagementYears ?? doc.series?.retentionManagementYears,
-    baseAc: source.retentionCentralYears ?? doc.series?.retentionCentralYears,
-    baseDisposition:
+  const retention = resolveTrdRetention({
+    retentionManagementYears: source.retentionManagementYears,
+    retentionCentralYears: source.retentionCentralYears,
+    finalDisposition:
       ("finalDisposition" in source && source.finalDisposition) ||
       doc.series?.finalDisposition ||
       null,
+    seriesFallback: doc.series
+      ? {
+          retentionManagementYears: doc.series.retentionManagementYears,
+          retentionCentralYears: doc.series.retentionCentralYears,
+          finalDisposition: doc.series.finalDisposition,
+        }
+      : undefined,
   });
 
   const baseDate = doc.documentDate ?? doc.archivedAt ?? doc.createdAt;
   const due = new Date(baseDate);
-  due.setFullYear(due.getFullYear() + calc.retentionYears);
+  due.setFullYear(due.getFullYear() + retention.ag + retention.ac);
 
   return prisma.document.update({
     where: { id: doc.id },
     data: {
-      appliedRetentionMgmt: calc.retentionManagementYears,
-      appliedRetentionCentral: calc.retentionCentralYears,
-      appliedFinalDisposition: calc.finalDisposition,
+      appliedRetentionMgmt: retention.ag,
+      appliedRetentionCentral: retention.ac,
+      appliedFinalDisposition: retention.disposition,
       retentionDueAt: due,
     },
   });
@@ -153,12 +181,8 @@ export async function applyTrdCalculationToDocument(
 export async function createSeries(user: SessionUser, data: SeriesInput) {
   assertTrdAdmin(user);
   const trd = await getActiveTrd(user);
-  const calc = calculateRetentionFromValues({
-    ...data,
-    baseAg: data.retentionManagementYears,
-    baseAc: data.retentionCentralYears,
-    baseDisposition: data.finalDisposition,
-  });
+  const ag = data.retentionManagementYears ?? 2;
+  const ac = data.retentionCentralYears ?? 8;
 
   const series = await prisma.documentarySeries.create({
     data: {
@@ -169,10 +193,11 @@ export async function createSeries(user: SessionUser, data: SeriesInput) {
       name: data.name.trim(),
       description: data.description,
       procedure: data.procedure,
-      retentionManagementYears: calc.retentionManagementYears,
-      retentionCentralYears: calc.retentionCentralYears,
-      retentionYears: calc.retentionYears,
-      finalDisposition: data.finalDisposition ?? calc.finalDisposition,
+      retentionManagementYears: ag,
+      retentionCentralYears: ac,
+      retentionYears: ag + ac,
+      finalDisposition: data.finalDisposition ?? "CONSERVATION",
+      seriesKind: data.seriesKind ?? "COMPOSITE",
       valueAdministrative: !!data.valueAdministrative,
       valueJuridical: !!data.valueJuridical,
       valueLegal: !!data.valueLegal,
@@ -202,18 +227,8 @@ export async function updateSeries(user: SessionUser, id: string, data: Partial<
   });
   if (!existing) throw new AppError("Serie no encontrada", 404);
 
-  const merged = { ...existing, ...data };
-  const calc = calculateRetentionFromValues({
-    valueAdministrative: merged.valueAdministrative,
-    valueJuridical: merged.valueJuridical,
-    valueLegal: merged.valueLegal,
-    valueFiscal: merged.valueFiscal,
-    valueAccounting: merged.valueAccounting,
-    valueHistorical: merged.valueHistorical,
-    baseAg: data.retentionManagementYears ?? existing.retentionManagementYears,
-    baseAc: data.retentionCentralYears ?? existing.retentionCentralYears,
-    baseDisposition: data.finalDisposition ?? existing.finalDisposition,
-  });
+  const ag = data.retentionManagementYears ?? existing.retentionManagementYears ?? 2;
+  const ac = data.retentionCentralYears ?? existing.retentionCentralYears ?? 8;
 
   return prisma.documentarySeries.update({
     where: { id },
@@ -223,10 +238,11 @@ export async function updateSeries(user: SessionUser, id: string, data: Partial<
       description: data.description,
       procedure: data.procedure,
       dependencyId: data.dependencyId === undefined ? undefined : data.dependencyId || null,
-      retentionManagementYears: calc.retentionManagementYears,
-      retentionCentralYears: calc.retentionCentralYears,
-      retentionYears: calc.retentionYears,
-      finalDisposition: data.finalDisposition ?? calc.finalDisposition,
+      retentionManagementYears: ag,
+      retentionCentralYears: ac,
+      retentionYears: ag + ac,
+      finalDisposition: data.finalDisposition ?? existing.finalDisposition,
+      seriesKind: data.seriesKind ?? existing.seriesKind,
       valueAdministrative: data.valueAdministrative,
       valueJuridical: data.valueJuridical,
       valueLegal: data.valueLegal,

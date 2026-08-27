@@ -15,14 +15,15 @@ const createSchema = z.object({
   dependencyId: z.string().optional().nullable(),
 });
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
     const user = await getSession();
     if (!user) throw new AppError("No autenticado", 401);
     requirePermission(user, "users.read");
     if (!isAdminRole(user)) throw new AppError("Acceso denegado", 403);
 
-    const users = await listUsers(user);
+    const cursor = req.nextUrl.searchParams.get("cursor");
+    const users = await listUsers(user, { cursor, take: 50 });
     return jsonOk(users);
   } catch (e) {
     return jsonError(e);

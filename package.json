@@ -17,13 +17,17 @@
     "test:stress": "tsx scripts/stress-load.ts",
     "test:security": "tsx scripts/security-audit.ts",
     "test:all": "vitest run && tsx scripts/smoke-production-sim.ts && tsx scripts/test-suite-full.ts && tsx scripts/stress-load.ts",
-    "secrets:generate": "tsx scripts/generate-secrets.ts"
+    "secrets:generate": "tsx scripts/generate-secrets.ts",
+    "worker": "tsx src/jobs/worker.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
-    "@hookform/resolvers": "^5.5.7",
+    "@aws-sdk/client-s3": "^3.864.0",
+    "@aws-sdk/s3-request-presigner": "^3.864.0",
+    "bullmq": "^5.58.5",
+    "ioredis": "^5.7.0",
     "@prisma/client": "^5.22.0",
     "@tanstack/react-query": "^5.101.4",
     "bcryptjs": "^3.0.3",
@@ -47,6 +51,7 @@
     "recharts": "^3.10.1",
     "sonner": "^2.0.7",
     "tailwind-merge": "^3.6.0",
+    "tsx": "^4.23.1",
     "zod": "^4.4.3"
   },
   "devDependencies": {

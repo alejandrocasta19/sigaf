@@ -27,7 +27,7 @@ const securityHeaders = [
 const nextConfig: NextConfig = {
   experimental: {
     serverActions: {
-      bodySizeLimit: "20mb",
+      bodySizeLimit: "4mb",
     },
   },
   async headers() {
@@ -37,7 +37,16 @@ const nextConfig: NextConfig = {
         headers:
           process.env.NODE_ENV === "production"
             ? [
-                ...securityHeaders,
+                ...securityHeaders.map((h) =>
+                  h.key === "Content-Security-Policy" && process.env.S3_PUBLIC_URL
+                    ? {
+                        ...h,
+                        value: h.value
+                          .replace("connect-src 'self'", `connect-src 'self' ${process.env.S3_PUBLIC_URL}`)
+                          .replace("img-src 'self' data: blob:", `img-src 'self' data: blob: ${process.env.S3_PUBLIC_URL}`),
+                      }
+                    : h
+                ),
                 {
                   key: "Strict-Transport-Security",
                   value: "max-age=31536000; includeSubDomains",

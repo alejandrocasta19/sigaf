@@ -29,6 +29,7 @@ export function TrdAdminPanel({
     code: "",
     name: "",
     dependencyId: "",
+    seriesKind: "COMPOSITE" as "SIMPLE" | "COMPOSITE",
     retentionManagementYears: 2,
     retentionCentralYears: 3,
     finalDisposition: "SELECTION",
@@ -67,7 +68,7 @@ export function TrdAdminPanel({
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Error");
-      toast.success("Serie creada (retención calculada por valores)");
+      toast.success("Serie creada según TRD oficial");
       router.refresh();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Error");
@@ -209,8 +210,31 @@ export function TrdAdminPanel({
               ))}
             </select>
           </div>
+          <div className="sm:col-span-2">
+            <Label>Tipo de serie (TRD)</Label>
+            <div className="mt-1 flex flex-wrap gap-4 text-sm">
+              <label className="inline-flex items-center gap-2">
+                <input
+                  type="radio"
+                  name="seriesKind"
+                  checked={form.seriesKind === "SIMPLE"}
+                  onChange={() => setForm({ ...form, seriesKind: "SIMPLE" })}
+                />
+                Serie simple (un tipo documental)
+              </label>
+              <label className="inline-flex items-center gap-2">
+                <input
+                  type="radio"
+                  name="seriesKind"
+                  checked={form.seriesKind === "COMPOSITE"}
+                  onChange={() => setForm({ ...form, seriesKind: "COMPOSITE" })}
+                />
+                Serie compuesta (varios tipos)
+              </label>
+            </div>
+          </div>
           <div>
-            <Label>AG (años base)</Label>
+            <Label>AG (años — TRD oficial)</Label>
             <Input
               type="number"
               value={form.retentionManagementYears}
@@ -220,7 +244,7 @@ export function TrdAdminPanel({
             />
           </div>
           <div>
-            <Label>AC (años base)</Label>
+            <Label>AC (años — TRD oficial)</Label>
             <Input
               type="number"
               value={form.retentionCentralYears}

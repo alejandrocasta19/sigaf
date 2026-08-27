@@ -1,8 +1,9 @@
-import { DocumentStatus, Prisma, WorkflowAction } from "@prisma/client";
+import { DocumentStatus, DocumentSupport, Prisma, WorkflowAction } from "@prisma/client";
 import { prisma } from "@/shared/kernel/prisma";
 import type { SessionUser } from "@/shared/kernel/types";
 import { AppError } from "@/shared/kernel/http";
 import { createNotification } from "@/modules/notifications";
+import { inferElectronicFormat, inferSupportFromFile } from "@/shared/kernel/expediente-cycle";
 import {
   buildSearchText,
   documentScope,
@@ -97,12 +98,17 @@ export async function submitDocumentForReview(
     name: string;
     description?: string;
     dependencyId: string;
+    expedienteId?: string;
     documentTypeId?: string;
     seriesId?: string;
     subseriesId?: string;
     folioCount?: number;
     observations?: string;
     responsibleId?: string;
+    documentDate?: string;
+    support?: DocumentSupport;
+    electronicFormat?: string;
+    fileName?: string;
   }
 ) {
   assertRole(user, ["DEPT_WORKER", "DEPT_HEAD", "DOC_ADMIN"]);
@@ -115,9 +121,35 @@ export async function submitDocumentForReview(
     throw new AppError("Solo puede cargar documentos de su dependencia", 403);
   }
 
+  let seriesId = data.seriesId;
+  let subseriesId = data.subseriesId;
+  let expedienteId = data.expedienteId;
+
+  if (data.expedienteId) {
+    const exp = await prisma.expediente.findFirst({
+      where: {
+        id: data.expedienteId,
+        organizationId: user.organizationId,
+        deletedAt: null,
+      },
+    });
+    if (!exp) throw new AppError("Expediente no encontrado", 404);
+    if (exp.status === "CLOSED") throw new AppError("El expediente está cerrado", 400);
+    if (exp.dependencyId !== data.dependencyId) {
+      throw new AppError("El expediente no pertenece a la dependencia indicada", 400);
+    }
+    seriesId = exp.seriesId ?? seriesId;
+    subseriesId = exp.subseriesId ?? subseriesId;
+    expedienteId = exp.id;
+  }
+
+  const support = inferSupportFromFile(!!data.fileName, data.support);
+  const electronicFormat =
+    data.electronicFormat ?? (data.fileName ? inferElectronicFormat(data.fileName) : undefined);
+
   const code = await generateDocumentCode(user.organizationId, {
     dependencyId: data.dependencyId,
-    seriesId: data.seriesId,
+    seriesId,
   });
   let qrCode = generateQrCode();
   for (let i = 0; i < 5; i++) {
@@ -128,20 +160,35 @@ export async function submitDocumentForReview(
 
   const status: DocumentStatus = "PENDING_REVIEW";
   const now = new Date();
+  const docDate = data.documentDate ? new Date(data.documentDate) : now;
+
+  let sortOrder = 0;
+  if (expedienteId) {
+    const max = await prisma.document.aggregate({
+      where: { expedienteId, deletedAt: null },
+      _max: { sortOrder: true },
+    });
+    sortOrder = (max._max.sortOrder ?? 0) + 1;
+  }
 
   const doc = await prisma.document.create({
     data: {
       organizationId: user.organizationId,
       dependencyId: data.dependencyId,
+      expedienteId,
       documentTypeId: data.documentTypeId,
-      seriesId: data.seriesId,
-      subseriesId: data.subseriesId,
+      seriesId,
+      subseriesId,
       code,
       qrCode,
       name: data.name,
       description: data.description,
       folioCount: data.folioCount ?? 1,
       observations: data.observations,
+      documentDate: docDate,
+      support,
+      electronicFormat,
+      sortOrder,
       status,
       submittedById: user.id,
       responsibleId: data.responsibleId ?? user.id,
@@ -152,7 +199,7 @@ export async function submitDocumentForReview(
         observations: data.observations,
       }),
     },
-    include: { dependency: true },
+    include: { dependency: true, expediente: true },
   });
 
   await logEvent({
@@ -185,6 +232,19 @@ export async function submitDocumentForReview(
     await applyTrdCalculationToDocument(user, doc.id);
   } catch {
     /* sin serie TRD aún */
+  }
+
+  if (expedienteId) {
+    const { applyRetentionFromEvent } = await import(
+      "@/modules/expedientes/application/expediente-cycle-service"
+    );
+    const exp = await prisma.expediente.findUnique({
+      where: { id: expedienteId },
+      select: { retentionStartEvent: true, retentionStartDate: true },
+    });
+    if (exp?.retentionStartEvent === "LAST_DOCUMENT" || !exp?.retentionStartDate) {
+      await applyRetentionFromEvent(expedienteId, "LAST_DOCUMENT", docDate);
+    }
   }
 
   return doc;
@@ -653,8 +713,22 @@ export async function listTeamMembers(user: SessionUser) {
       deletedAt: null,
       OR: [{ managerId: user.id }, { role: { code: "DEPT_WORKER" } }],
     },
-    omit: { passwordHash: true, mfaSecret: true },
-    include: { role: true },
+    select: {
+      id: true,
+      email: true,
+      firstName: true,
+      lastName: true,
+      avatarUrl: true,
+      status: true,
+      roleId: true,
+      dependencyId: true,
+      organizationId: true,
+      mfaEnabled: true,
+      lastLoginAt: true,
+      createdAt: true,
+      updatedAt: true,
+      role: true,
+    },
     orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
   });
 }

@@ -1,9 +1,7 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { getSession, requirePermission } from "@/shared/kernel/auth";
-import { AppError, jsonError, jsonOk, writeAudit } from "@/shared/kernel/http";
-import { buildImportTemplate, importDocumentsFromExcel } from "@/modules/search-reports";
-import { saveUpload } from "@/shared/kernel/storage";
-import { assertAllowedUpload } from "@/shared/kernel/upload-policy";
+import { AppError, jsonError } from "@/shared/kernel/http";
+import { buildImportTemplate } from "@/modules/search-reports";
 
 export async function GET() {
   try {
@@ -24,41 +22,11 @@ export async function GET() {
   }
 }
 
-export async function POST(req: NextRequest) {
-  try {
-    const user = await getSession();
-    if (!user) throw new AppError("No autenticado", 401);
-    requirePermission(user, "documents.create");
-
-    const form = await req.formData();
-    const file = form.get("file");
-    if (!file || !(file instanceof File)) {
-      throw new AppError("Debe adjuntar un archivo Excel (.xlsx)", 400);
-    }
-
-    const buffer = Buffer.from(await file.arrayBuffer());
-    const validated = await assertAllowedUpload(file, buffer, {
-      allowedExt: [".xlsx", ".xls", ".csv"],
-    });
-
-    await saveUpload({
-      orgId: user.organizationId,
-      category: "imports",
-      originalName: validated.safeOriginalName,
-      buffer,
-    });
-
-    const result = await importDocumentsFromExcel(user, buffer);
-
-    await writeAudit({
-      user,
-      action: "DOCUMENT_IMPORT",
-      module: "documents",
-      changes: { created: result.created, errors: result.errors.length },
-    });
-
-    return jsonOk(result);
-  } catch (e) {
-    return jsonError(e);
-  }
+export async function POST() {
+  return jsonError(
+    new AppError(
+      "Use POST /api/v1/uploads/intent (purpose=import), PUT a la URL firmada y POST /api/v1/uploads/complete",
+      410
+    )
+  );
 }

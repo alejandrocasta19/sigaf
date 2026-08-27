@@ -60,7 +60,7 @@ export default async function DocumentDetailPage({ params }: Props) {
           >
             <ArrowLeft className="h-4 w-4" /> Volver a documentos
           </Link>
-          <h1 className="text-2xl font-bold text-slate-900">{doc.name}</h1>
+          <h1 className="page-title text-xl font-bold text-slate-900 sm:text-2xl">{doc.name}</h1>
           <p className="text-sm text-slate-500">{doc.code}</p>
         </div>
         <StatusBadge

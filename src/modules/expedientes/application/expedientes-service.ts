@@ -1,7 +1,12 @@
 import { DocumentStatus, Prisma } from "@prisma/client";
 import { prisma } from "@/shared/kernel/prisma";
 import type { SessionUser } from "@/shared/kernel/types";
-import { generateTrdExpedienteCode } from "@/modules/archival-instruments";
+import { AppError } from "@/shared/kernel/http";
+import {
+  generateTrdExpedienteCode,
+  initialProcessStepsAfterWizard,
+  resolveRetentionForExpediente,
+} from "./expediente-archival-service";
 
 export function expedienteScope(user: SessionUser): Prisma.ExpedienteWhereInput {
   const where: Prisma.ExpedienteWhereInput = {
@@ -48,6 +53,7 @@ export async function listExpedientes(params: {
     where.OR = [
       { name: { contains: params.q, mode: "insensitive" } },
       { code: { contains: params.q, mode: "insensitive" } },
+      { subject: { contains: params.q, mode: "insensitive" } },
     ];
   }
   if (params.status) where.status = params.status;
@@ -60,6 +66,8 @@ export async function listExpedientes(params: {
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     include: {
       dependency: true,
+      series: true,
+      subseries: true,
       responsible: {
         select: { id: true, firstName: true, lastName: true, email: true },
       },
@@ -80,29 +88,83 @@ export async function createExpediente(
   user: SessionUser,
   data: {
     name: string;
+    subject?: string;
     dependencyId: string;
+    seriesId?: string;
+    subseriesId?: string;
+    subsection?: string;
+    expedienteType?: string;
+    year?: number;
     code?: string;
     description?: string;
-    seriesId?: string;
+    identificationConfirmed?: boolean;
   }
 ) {
+  if (!data.identificationConfirmed) {
+    throw new AppError("Debe confirmar el paso de identificación antes de crear el expediente", 400);
+  }
+
+  const subject = (data.subject?.trim() || data.name.trim());
+
+  const duplicate = await prisma.expediente.findFirst({
+    where: {
+      organizationId: user.organizationId,
+      dependencyId: data.dependencyId,
+      seriesId: data.seriesId ?? null,
+      subseriesId: data.subseriesId ?? null,
+      deletedAt: null,
+      status: { notIn: ["DELETED", "CLOSED"] },
+      OR: [
+        { subject: { equals: subject, mode: "insensitive" } },
+        { name: { equals: subject, mode: "insensitive" } },
+      ],
+    },
+    select: { id: true, code: true },
+  });
+  if (duplicate) {
+    throw new AppError(
+      `Ya existe el expediente ${duplicate.code} para este trámite en la misma serie/subserie`,
+      409
+    );
+  }
+
+  const year = data.year ?? new Date().getFullYear();
   const code =
     data.code ??
     (await generateTrdExpedienteCode({
       organizationId: user.organizationId,
       dependencyId: data.dependencyId,
       seriesId: data.seriesId,
+      year,
     }));
+
+  const retention = await resolveRetentionForExpediente(data.seriesId, data.subseriesId);
+
   return prisma.expediente.create({
     data: {
       organizationId: user.organizationId,
       dependencyId: data.dependencyId,
+      seriesId: data.seriesId ?? null,
+      subseriesId: data.subseriesId ?? null,
       code,
-      name: data.name,
+      name: subject,
+      subject,
+      subsection: data.subsection,
+      expedienteType: data.expedienteType ?? "Serie compuesta",
+      year,
       description: data.description,
       responsibleId: user.id,
+      processSteps: initialProcessStepsAfterWizard({
+        identificationConfirmed: data.identificationConfirmed,
+      }) as Prisma.InputJsonValue,
+      appliedRetentionMgmt: retention.ag,
+      appliedRetentionCentral: retention.ac,
+      appliedFinalDisposition: retention.disposition,
+      retentionStartEvent: "TRAMITE_END",
+      retentionStartDate: null,
+      retentionDueAt: null,
     },
-    include: { dependency: true },
+    include: { dependency: true, series: true, subseries: true },
   });
 }
 
@@ -111,10 +173,17 @@ export async function getExpediente(user: SessionUser, id: string) {
     where: { id, ...expedienteScope(user) },
     include: {
       dependency: true,
+      series: true,
+      subseries: true,
+      organization: { select: { name: true } },
       responsible: {
         select: { id: true, firstName: true, lastName: true, email: true },
       },
-      documents: { where: { deletedAt: null }, take: 50 },
+      documents: {
+        where: { deletedAt: null },
+        orderBy: [{ sortOrder: "asc" }, { documentDate: "asc" }],
+        take: 100,
+      },
     },
   });
 }
@@ -122,15 +191,43 @@ export async function getExpediente(user: SessionUser, id: string) {
 export async function updateExpediente(
   user: SessionUser,
   id: string,
-  data: Partial<{ name: string; description: string; status: DocumentStatus }>
+  data: Partial<{ name: string; description: string; status: DocumentStatus; subject: string }>,
+  expectedVersion?: number
 ) {
   const existing = await getExpediente(user, id);
   if (!existing) return null;
+  if (expectedVersion != null) {
+    const bumped = await prisma.expediente.updateMany({
+      where: { id, version: expectedVersion, ...expedienteScope(user) },
+      data: { ...data, version: { increment: 1 } },
+    });
+    if (bumped.count === 0) {
+      throw new AppError("El expediente fue modificado por otro usuario. Recargue la página.", 409);
+    }
+    return getExpediente(user, id);
+  }
   return prisma.expediente.update({
     where: { id },
-    data,
-    include: { dependency: true },
+    data: { ...data, version: { increment: 1 } },
+    include: { dependency: true, series: true, subseries: true },
   });
+}
+
+export async function claimExpedienteVersion(user: SessionUser, id: string, expectedVersion?: number) {
+  if (expectedVersion == null) {
+    await prisma.expediente.update({
+      where: { id },
+      data: { version: { increment: 1 } },
+    });
+    return;
+  }
+  const bumped = await prisma.expediente.updateMany({
+    where: { id, version: expectedVersion, ...expedienteScope(user) },
+    data: { version: { increment: 1 } },
+  });
+  if (bumped.count === 0) {
+    throw new AppError("El expediente fue modificado por otro usuario. Recargue la página.", 409);
+  }
 }
 
 export async function softDeleteExpediente(user: SessionUser, id: string) {
@@ -154,3 +251,5 @@ export async function softDeleteExpediente(user: SessionUser, id: string) {
 
   return exp;
 }
+
+export { generateTrdExpedienteCode, resolveRetentionForExpediente } from "./expediente-archival-service";

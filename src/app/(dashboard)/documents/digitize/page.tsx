@@ -24,7 +24,7 @@ export default async function DigitizePage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-slate-900">Digitalización</h1>
+        <h1 className="page-title text-xl font-bold text-slate-900 sm:text-2xl">Digitalización</h1>
         <p className="text-sm text-slate-500">
           Suba PDF o imagen; el texto de PDF se indexa para búsqueda
         </p>

@@ -65,6 +65,7 @@ export const NAV_BY_ROLE: Record<RoleCode, NavGroup[]> = {
       title: "ADMINISTRACIÓN GLOBAL",
       items: [
         { label: "Organizaciones", href: "/organizations", icon: Building2 },
+        { label: "Dependencias", href: "/dependencies", icon: Building2 },
         { label: "Usuarios", href: "/users", icon: Users },
         { label: "Roles y Permisos", href: "/roles", icon: Shield },
         { label: "Módulos del Sistema", href: "/settings/modules", icon: Boxes },
@@ -181,11 +182,11 @@ export const NAV_BY_ROLE: Record<RoleCode, NavGroup[]> = {
       ],
     },
     {
-      title: "Configuración",
+      title: "Mi cuenta",
       items: [
-        { label: "Perfil", href: "/profile", icon: UserCircle },
+        { label: "Preferencias", href: "/profile", icon: Settings },
+        { label: "Notificaciones", href: "/notifications", icon: Bell },
         { label: "Glosario", href: "/help/glossary", icon: BookOpen },
-        { label: "Configuración", href: "/settings", icon: Settings },
       ],
     },
   ],

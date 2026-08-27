@@ -19,5 +19,6 @@ console.log(
 console.log(`APP_URL="https://sigaf.ejemplo.gov.co"`);
 console.log(`FORCE_HTTPS="true"`);
 console.log(`NODE_ENV="production"`);
+console.log(`REQUIRE_ADMIN_MFA="true"`);
 console.log(`# API_RATE_MAX=120`);
 console.log(`# LOGIN_RATE_MAX=20`);

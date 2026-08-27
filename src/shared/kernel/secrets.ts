@@ -13,6 +13,11 @@ export function assertProductionSecrets() {
     errors.push("JWT_SECRET parece un valor de ejemplo; genere uno fuerte");
   }
 
+  const csrf = process.env.CSRF_SECRET || "";
+  if (csrf.length < 24) {
+    errors.push("CSRF_SECRET debe tener al menos 24 caracteres en producción");
+  }
+
   const db = process.env.DATABASE_URL || "";
   if (!db) errors.push("DATABASE_URL es obligatorio");
   if (/sigaf_secret|postgres:postgres/i.test(db)) {

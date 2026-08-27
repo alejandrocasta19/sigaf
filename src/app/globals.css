@@ -24,3 +24,121 @@ body {
   scrollbar-width: thin;
   scrollbar-color: #cbd5e1 transparent;
 }
+
+/* Login page animations */
+@keyframes login-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes login-scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.85);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes login-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes login-bg-pulse {
+  0%,
+  100% {
+    opacity: 0.85;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.login-bg-pulse {
+  animation: login-bg-pulse 10s ease-in-out infinite;
+}
+
+.login-fade-up {
+  animation: login-fade-up 0.45s ease-out both;
+}
+
+.login-scale-in {
+  animation: login-scale-in 0.5s cubic-bezier(0.22, 1, 0.36, 1) 0.1s both;
+}
+
+.login-fade-in {
+  animation: login-fade-in 0.3s ease-out both;
+}
+
+.login-stagger {
+  animation: login-fade-up 0.4s ease-out both;
+}
+
+.login-stagger:nth-child(1) {
+  animation-delay: 0.05s;
+}
+.login-stagger:nth-child(2) {
+  animation-delay: 0.1s;
+}
+.login-stagger:nth-child(3) {
+  animation-delay: 0.15s;
+}
+.login-stagger:nth-child(4) {
+  animation-delay: 0.2s;
+}
+.login-stagger:nth-child(5) {
+  animation-delay: 0.25s;
+}
+.login-stagger:nth-child(6) {
+  animation-delay: 0.3s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .login-bg-pulse,
+  .login-fade-up,
+  .login-scale-in,
+  .login-fade-in,
+  .login-stagger {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+}
+
+/* Responsive: tablas y tipografía móvil */
+.table-scroll,
+.overflow-x-auto {
+  -webkit-overflow-scrolling: touch;
+}
+
+.table-scroll table,
+.overflow-x-auto > table {
+  min-width: 560px;
+}
+
+@media (max-width: 640px) {
+  .page-title {
+    font-size: 1.25rem;
+    line-height: 1.75rem;
+  }
+
+  /* Evita zoom automático en iOS al enfocar campos */
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}

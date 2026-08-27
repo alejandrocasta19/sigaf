@@ -1,14 +1,8 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { getSession, requirePermission } from "@/shared/kernel/auth";
-import { AppError, jsonError, writeAudit } from "@/shared/kernel/http";
-import {
-  buildCsv,
-  buildExcelBuffer,
-  buildPdfBuffer,
-  fetchReportRows,
-  type ReportFormat,
-  type ReportType,
-} from "@/modules/search-reports";
+import { AppError, jsonError, jsonOk, writeAudit } from "@/shared/kernel/http";
+import { enqueueJob, JOB_TYPES } from "@/jobs";
+import type { ReportFormat, ReportType } from "@/modules/search-reports";
 
 const TYPES: ReportType[] = ["documents", "expedientes", "loans", "audit"];
 const FORMATS: ReportFormat[] = ["xlsx", "pdf", "csv"];
@@ -25,41 +19,17 @@ export async function GET(req: NextRequest) {
     if (!TYPES.includes(type)) throw new AppError("Tipo de reporte inválido", 400);
     if (!FORMATS.includes(format)) throw new AppError("Formato inválido", 400);
 
-    const data = await fetchReportRows(user, type);
-    let buffer: Buffer;
-    let contentType: string;
-    let ext: string;
-
-    if (format === "xlsx") {
-      buffer = await buildExcelBuffer(data.title, data.headers, data.rows);
-      contentType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-      ext = "xlsx";
-    } else if (format === "pdf") {
-      buffer = buildPdfBuffer(data.title, data.headers, data.rows);
-      contentType = "application/pdf";
-      ext = "pdf";
-    } else {
-      buffer = buildCsv(data.headers, data.rows);
-      contentType = "text/csv; charset=utf-8";
-      ext = "csv";
-    }
-
+    const job = await enqueueJob(user, JOB_TYPES.REPORT_EXPORT, { type, format });
     await writeAudit({
       user,
-      action: "REPORT_EXPORT",
+      action: "REPORT_EXPORT_ENQUEUE",
       module: "reports",
-      changes: { type, format, rows: data.rows.length },
+      entityType: "Job",
+      entityId: job.id,
+      changes: { type, format },
     });
 
-    const filename = `sigaf-${type}-${new Date().toISOString().slice(0, 10)}.${ext}`;
-    return new NextResponse(new Uint8Array(buffer), {
-      status: 200,
-      headers: {
-        "Content-Type": contentType,
-        "Content-Disposition": `attachment; filename="${filename}"`,
-        "Cache-Control": "no-store",
-      },
-    });
+    return jsonOk({ jobId: job.id, status: job.status }, 202);
   } catch (e) {
     return jsonError(e);
   }

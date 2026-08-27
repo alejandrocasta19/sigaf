@@ -44,7 +44,7 @@ export default async function HelpGuidePage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-slate-900">Guía de usuario</h1>
+        <h1 className="page-title text-xl font-bold text-slate-900 sm:text-2xl">Guía de usuario</h1>
         <p className="text-sm text-slate-500">Manual de uso del sistema SIGAF</p>
       </div>
 

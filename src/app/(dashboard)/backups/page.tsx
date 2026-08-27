@@ -24,7 +24,7 @@ export default async function BackupsPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Copias de seguridad</h1>
+          <h1 className="page-title text-xl font-bold text-slate-900 sm:text-2xl">Copias de seguridad</h1>
           <p className="text-sm text-slate-500">
             Manifest de uploads + pg_dump si está disponible
           </p>

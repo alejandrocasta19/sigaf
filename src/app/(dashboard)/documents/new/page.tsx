@@ -28,7 +28,7 @@ export default async function NewDocumentPage() {
     (
       await prisma.dependency.findFirst({
         where: { organizationId: user.organizationId, deletedAt: null },
-      })
+      }) 
     )?.id;
 
   if (!dependencyId) redirect("/documents");
@@ -37,7 +37,7 @@ export default async function NewDocumentPage() {
     where: { id: dependencyId },
   });
 
-  const [documentTypes, series, subseries] = await Promise.all([
+  const [documentTypes, series, subseries, expedientes] = await Promise.all([
     prisma.documentType.findMany({
       where: { organizationId: user.organizationId, active: true },
       orderBy: [{ category: "desc" }, { name: "asc" }],
@@ -50,6 +50,17 @@ export default async function NewDocumentPage() {
       where: { series: { organizationId: user.organizationId, active: true }, active: true },
       orderBy: { code: "asc" },
     }),
+    prisma.expediente.findMany({
+      where: {
+        organizationId: user.organizationId,
+        deletedAt: null,
+        dependencyId,
+        status: { not: "CLOSED" },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 100,
+      select: { id: true, code: true, name: true, subject: true },
+    }),
   ]);
 
   const typologies = documentTypes.filter((t) => t.category === "TYPOLOGY");
@@ -58,11 +69,17 @@ export default async function NewDocumentPage() {
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-slate-900">Cargar documento</h1>
+        <h1 className="page-title text-xl font-bold text-slate-900 sm:text-2xl">Cargar documento</h1>
         <p className="text-sm text-slate-500">
-          Flujo de aprobación: Funcionario → Jefe de Dependencia → Gestión Documental
+          Flujo: Expediente → Documento → Revisión → Archivo de Gestión → FUID → Transferencia
         </p>
       </div>
+      {expedientes.length === 0 ? (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          No hay expedientes abiertos en su dependencia.{" "}
+          <a href="/expedientes" className="font-medium underline">Cree un expediente</a> antes de cargar documentos.
+        </div>
+      ) : (
       <SubmitDocumentForm
         dependencyId={dependency.id}
         dependencyName={dependency.name}
@@ -78,7 +95,14 @@ export default async function NewDocumentPage() {
           code: s.code,
           seriesId: s.seriesId,
         }))}
+        expedientes={expedientes.map((e) => ({
+          id: e.id,
+          code: e.code,
+          name: e.name,
+          subject: e.subject ?? e.name,
+        }))}
       />
+      )}
     </div>
   );
 }

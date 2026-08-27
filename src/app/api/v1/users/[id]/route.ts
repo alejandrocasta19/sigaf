@@ -77,8 +77,23 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
     const updated = await prisma.user.update({
       where: { id },
       data,
-      omit: { passwordHash: true, mfaSecret: true },
-      include: { role: true, dependency: true },
+      select: {
+        id: true,
+        email: true,
+        firstName: true,
+        lastName: true,
+        avatarUrl: true,
+        status: true,
+        roleId: true,
+        dependencyId: true,
+        organizationId: true,
+        mfaEnabled: true,
+        lastLoginAt: true,
+        createdAt: true,
+        updatedAt: true,
+        role: true,
+        dependency: true,
+      },
     });
 
     if (body.password || body.status === "BLOCKED" || body.status === "INACTIVE") {

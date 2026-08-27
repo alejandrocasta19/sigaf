@@ -29,7 +29,7 @@ export async function GET(req: NextRequest) {
 
     const status = req.nextUrl.searchParams.get("status") as LoanStatus | null;
     const loans = await listLoans(user, status || undefined);
-    return jsonOk(loans);
+    return jsonOk(loans.items);
   } catch (e) {
     return jsonError(e);
   }

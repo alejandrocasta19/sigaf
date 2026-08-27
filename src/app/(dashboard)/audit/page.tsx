@@ -22,7 +22,7 @@ export default async function AuditPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-slate-900">Auditoría</h1>
+        <h1 className="page-title text-xl font-bold text-slate-900 sm:text-2xl">Auditoría</h1>
         <p className="text-sm text-slate-500">Registro de actividades del sistema</p>
       </div>
 

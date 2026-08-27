@@ -130,6 +130,199 @@ export async function getTrdStats(user: SessionUser) {
   };
 }
 
+export type TrdIdentificationStatus = {
+  trd: {
+    active: boolean;
+    id: string | null;
+    name: string | null;
+    version: string | null;
+    lastUpdated: string | null;
+    seriesCount: number;
+  };
+  versionAlert: {
+    show: boolean;
+    message: string | null;
+    latestSnapshotVersion: string | null;
+    latestSnapshotAt: string | null;
+  };
+  checks: {
+    trd: boolean;
+    dependency: boolean;
+    series: boolean;
+    tramite: boolean;
+    unique: boolean;
+  };
+  details: {
+    dependencyName?: string;
+    seriesName?: string;
+    subseriesName?: string;
+    seriesKind?: string;
+    duplicateExpedienteCode?: string;
+    retentionAg?: number;
+    retentionAc?: number;
+    disposition?: string;
+  };
+  messages: string[];
+};
+
+/** Validación en línea para paso 1 identificación (TRD vigente + clasificación previa). */
+export async function getTrdIdentificationStatus(
+  user: SessionUser,
+  params?: {
+    dependencyId?: string | null;
+    seriesId?: string | null;
+    subseriesId?: string | null;
+    subject?: string | null;
+  }
+): Promise<TrdIdentificationStatus> {
+  const orgId = user.organizationId;
+  const [activeTrd, latestSnapshot] = await Promise.all([
+    getActiveTrd(user),
+    prisma.trdVersion.findFirst({
+      where: { organizationId: orgId },
+      orderBy: { createdAt: "desc" },
+    }),
+  ]);
+
+  const messages: string[] = [];
+  const details: TrdIdentificationStatus["details"] = {};
+  let dependencyOk = false;
+  let seriesOk = false;
+  let tramiteOk = false;
+  let uniqueOk = true;
+
+  if (!activeTrd) {
+    messages.push("No hay TRD activa en el sistema. Contacte al Archivo Central.");
+  }
+
+  let versionAlertShow = false;
+  let versionAlertMessage: string | null = null;
+
+  if (activeTrd && latestSnapshot) {
+    const seriesChangedSinceSnapshot = await prisma.documentarySeries.findFirst({
+      where: {
+        organizationId: orgId,
+        active: true,
+        updatedAt: { gt: latestSnapshot.createdAt },
+      },
+      select: { id: true },
+    });
+    if (seriesChangedSinceSnapshot) {
+      versionAlertShow = true;
+      versionAlertMessage = `La TRD fue modificada después del snapshot v${latestSnapshot.version}. Solicite una nueva versión aprobada.`;
+    } else if (latestSnapshot.version !== activeTrd.version) {
+      versionAlertShow = true;
+      versionAlertMessage = `Snapshot TRD v${latestSnapshot.version} difiere de la versión activa v${activeTrd.version}.`;
+    }
+  }
+
+  if (params?.dependencyId) {
+    const dep = await prisma.dependency.findFirst({
+      where: {
+        id: params.dependencyId,
+        organizationId: orgId,
+        active: true,
+        deletedAt: null,
+      },
+    });
+    if (dep) {
+      dependencyOk = true;
+      details.dependencyName = dep.name;
+    } else {
+      messages.push("La dependencia seleccionada no está activa en la TRD.");
+    }
+  }
+
+  if (params?.seriesId) {
+    const series = await prisma.documentarySeries.findFirst({
+      where: { id: params.seriesId, organizationId: orgId, active: true },
+      include: {
+        subseries: { where: { active: true } },
+      },
+    });
+    if (!series) {
+      messages.push("La serie no existe o está inactiva en la TRD vigente.");
+    } else if (series.dependencyId && params.dependencyId && series.dependencyId !== params.dependencyId) {
+      messages.push("La serie no corresponde a la dependencia productora seleccionada.");
+    } else {
+      seriesOk = true;
+      details.seriesName = series.name;
+      details.seriesKind = series.seriesKind;
+      const sub = params.subseriesId
+        ? series.subseries.find((s) => s.id === params.subseriesId)
+        : null;
+      if (params.subseriesId && !sub) {
+        seriesOk = false;
+        messages.push("La subserie no está activa en la TRD vigente.");
+      } else {
+        if (sub) details.subseriesName = sub.name;
+        const { resolveTrdRetention } = await import("./trd-crud-service");
+        const ret = resolveTrdRetention({
+          retentionManagementYears: sub?.retentionManagementYears ?? series.retentionManagementYears,
+          retentionCentralYears: sub?.retentionCentralYears ?? series.retentionCentralYears,
+          finalDisposition: sub?.finalDisposition ?? series.finalDisposition,
+        });
+        details.retentionAg = ret.ag;
+        details.retentionAc = ret.ac;
+        details.disposition = ret.disposition;
+      }
+    }
+  }
+
+  const subject = params?.subject?.trim();
+  if (subject && subject.length >= 3) {
+    tramiteOk = true;
+    if (params?.dependencyId) {
+      const dup = await prisma.expediente.findFirst({
+        where: {
+          organizationId: orgId,
+          dependencyId: params.dependencyId,
+          seriesId: params.seriesId ?? null,
+          subseriesId: params.subseriesId ?? null,
+          deletedAt: null,
+          status: { notIn: ["DELETED", "CLOSED"] },
+          OR: [
+            { subject: { equals: subject, mode: "insensitive" } },
+            { name: { equals: subject, mode: "insensitive" } },
+          ],
+        },
+        select: { code: true },
+      });
+      if (dup) {
+        uniqueOk = false;
+        details.duplicateExpedienteCode = dup.code;
+        messages.push(`Ya existe el expediente ${dup.code} para este trámite.`);
+      }
+    }
+  }
+
+  return {
+    trd: {
+      active: !!activeTrd,
+      id: activeTrd?.id ?? null,
+      name: activeTrd?.name ?? null,
+      version: activeTrd?.version ?? null,
+      lastUpdated: activeTrd?.lastUpdated?.toISOString() ?? null,
+      seriesCount: activeTrd?.seriesCount ?? 0,
+    },
+    versionAlert: {
+      show: versionAlertShow,
+      message: versionAlertMessage,
+      latestSnapshotVersion: latestSnapshot?.version ?? null,
+      latestSnapshotAt: latestSnapshot?.createdAt?.toISOString() ?? null,
+    },
+    checks: {
+      trd: !!activeTrd,
+      dependency: dependencyOk,
+      series: seriesOk,
+      tramite: tramiteOk,
+      unique: uniqueOk,
+    },
+    details,
+    messages,
+  };
+}
+
 /** Código de expediente TRD: {dep}-{serie}-{año}-{seq} → 20-02-2026-00001 */
 export async function generateTrdExpedienteCode(params: {
   organizationId: string;

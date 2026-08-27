@@ -11,7 +11,10 @@ Un pentest externo real lo realiza una firma especializada; aquí hay una audito
 | HTTPS forzado en producción (`FORCE_HTTPS`, vía `x-forwarded-proto`) | Sí |
 | Rate limit login + rate limit API global | Sí |
 | CSRF Origin/Referer en mutaciones API | Sí |
+| Token CSRF double-submit (`sigaf_csrf` + `X-CSRF-Token`) | Sí |
 | Headers (XFO, nosniff, Referrer-Policy, CSP básica) | Sí |
+| HSTS en producción (middleware + next.config) | Sí |
+| MFA obligatorio admins en producción (`REQUIRE_ADMIN_MFA`) | Sí |
 | Política de contraseñas (≥10, mayúscula, minúscula, número, especial) | Sí |
 | MFA TOTP opcional por usuario (`/settings/security`) | Sí |
 | Alertas in-app tras ≥5 logins fallidos / 15 min | Sí |
@@ -66,8 +69,8 @@ Un pentest externo real lo realiza una firma especializada; aquí hay una audito
 | Escenario | Requisito mínimo |
 |-----------|------------------|
 | Demo / LAN | Secretos no-demo + HTTPS opcional |
-| Intranet VPN | Todo el checklist excepto WAF cloud |
-| Internet | Checklist completo + pentest externo |
+| Intranet VPN | Secretos fuertes + HTTPS + MFA admin |
+| Internet | Checklist completo + WAF + pentest externo |
 
 ## Comandos útiles
 
@@ -77,3 +80,18 @@ npm run test:security
 npm run test:all
 npm run build && npm start
 ```
+
+## Despliegue en hosting (internet)
+
+1. Copie `.env.example` → `.env` en el servidor y ejecute `npm run secrets:generate` **en local**; pegue los valores generados (nunca suba `.env` al repositorio).
+2. Variables mínimas en producción:
+   - `NODE_ENV=production`
+   - `APP_URL=https://su-dominio.gov.co`
+   - `JWT_SECRET` (≥32 chars), `CSRF_SECRET` (≥24 chars)
+   - `DATABASE_URL` con password fuerte (Postgres solo red interna)
+   - `FORCE_HTTPS=true`, `ALLOW_HTTP=false`
+   - `REQUIRE_ADMIN_MFA=true` (recomendado)
+3. Coloque **TLS** en el proxy (Nginx/Caddy/ALB) y reenvíe `X-Forwarded-Proto: https`.
+4. Active **MFA** en `/settings/security` para cuentas admin antes de abrir al público.
+5. Ejecute `npm run test:security` contra la URL de staging.
+6. Contrate **pentest externo** antes del go-live institucional.

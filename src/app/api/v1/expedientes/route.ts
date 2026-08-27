@@ -7,9 +7,16 @@ import { createExpediente, listExpedientes } from "@/modules/expedientes";
 
 const createSchema = z.object({
   name: z.string().min(1),
+  subject: z.string().min(1).optional(),
   dependencyId: z.string().min(1),
+  seriesId: z.string().optional(),
+  subseriesId: z.string().optional(),
+  subsection: z.string().optional(),
+  expedienteType: z.string().optional(),
+  year: z.number().int().optional(),
   code: z.string().optional(),
   description: z.string().optional(),
+  identificationConfirmed: z.literal(true),
 });
 
 export async function GET(req: NextRequest) {

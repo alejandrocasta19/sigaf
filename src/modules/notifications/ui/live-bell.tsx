@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Bell, CheckCheck } from "lucide-react";
 import { toast } from "sonner";
 import { formatDate } from "@/shared/kernel/utils";
@@ -19,29 +20,54 @@ type Notif = {
 const POLL_MS = 15000;
 
 export function LiveNotificationsBell() {
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<Notif[]>([]);
   const [unread, setUnread] = useState(0);
   const sinceRef = useRef<string>(new Date().toISOString());
   const seenToastIds = useRef<Set<string>>(new Set());
   const panelRef = useRef<HTMLDivElement>(null);
+  const stoppedRef = useRef(false);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const stopPolling = useCallback((redirectLogin = false) => {
+    stoppedRef.current = true;
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+    if (redirectLogin) {
+      router.replace("/login");
+    }
+  }, [router]);
 
   const fetchAll = useCallback(async () => {
-    const res = await fetch("/api/v1/notifications");
-    const data = await res.json();
-    if (!res.ok || !data.success) return;
+    if (stoppedRef.current) return;
+    const res = await fetch("/api/v1/notifications", { credentials: "include" });
+    if (res.status === 401) {
+      stopPolling(true);
+      return;
+    }
+    const data = await res.json().catch(() => null);
+    if (!res.ok || !data?.success) return;
     setItems(data.data.items);
     setUnread(data.data.unread);
     if (data.data.serverTime) sinceRef.current = data.data.serverTime;
     data.data.items.forEach((n: Notif) => seenToastIds.current.add(n.id));
-  }, []);
+  }, [stopPolling]);
 
   const pollNew = useCallback(async () => {
+    if (stoppedRef.current) return;
     const res = await fetch(
-      `/api/v1/notifications?since=${encodeURIComponent(sinceRef.current)}`
+      `/api/v1/notifications?since=${encodeURIComponent(sinceRef.current)}`,
+      { credentials: "include" }
     );
-    const data = await res.json();
-    if (!res.ok || !data.success) return;
+    if (res.status === 401) {
+      stopPolling(true);
+      return;
+    }
+    const data = await res.json().catch(() => null);
+    if (!res.ok || !data?.success) return;
 
     const fresh: Notif[] = data.data.items ?? [];
     if (data.data.serverTime) sinceRef.current = data.data.serverTime;
@@ -61,14 +87,17 @@ export function LiveNotificationsBell() {
       fn(n.title, { description: n.message, duration: 5000 });
       setItems((prev) => [n, ...prev].slice(0, 30));
     }
-  }, []);
+  }, [stopPolling]);
 
   useEffect(() => {
+    stoppedRef.current = false;
     fetchAll().catch(() => undefined);
-    const id = setInterval(() => {
+    intervalRef.current = setInterval(() => {
       pollNew().catch(() => undefined);
     }, POLL_MS);
-    return () => clearInterval(id);
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
   }, [fetchAll, pollNew]);
 
   useEffect(() => {
@@ -82,21 +111,31 @@ export function LiveNotificationsBell() {
   }, [open]);
 
   async function markAll() {
-    await fetch("/api/v1/notifications", {
+    const res = await fetch("/api/v1/notifications", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
+      credentials: "include",
       body: JSON.stringify({ all: true }),
     });
+    if (res.status === 401) {
+      stopPolling(true);
+      return;
+    }
     setItems((prev) => prev.map((n) => ({ ...n, read: true })));
     setUnread(0);
   }
 
   async function markOne(id: string) {
-    await fetch("/api/v1/notifications", {
+    const res = await fetch("/api/v1/notifications", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
+      credentials: "include",
       body: JSON.stringify({ id }),
     });
+    if (res.status === 401) {
+      stopPolling(true);
+      return;
+    }
     setItems((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
     setUnread((u) => Math.max(0, u - 1));
   }

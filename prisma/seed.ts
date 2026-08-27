@@ -64,6 +64,7 @@ const DOC_ADMIN_MODULES = new Set([
   "jobs",
   "audit",
   "settings",
+  "dependencies",
 ]);
 
 const DEPT_HEAD_MODULES = new Set([
@@ -165,12 +166,12 @@ function shouldAssignPermission(roleCode: RoleCode, module: string, action: stri
 }
 
 async function main() {
-  console.log("🧹 Limpiando datos existentes...");
+  console.log("Limpiando datos existentes...");
   await clearDatabase();
 
   const passwordHash = await bcrypt.hash(PASSWORD, 12);
 
-  console.log("🏢 Creando organización COOTRANSHUILA...");
+  console.log("Creando organización COOTRANSHUILA...");
   const org = await prisma.organization.create({
     data: {
       name: "COOTRANSHUILA",
@@ -179,7 +180,7 @@ async function main() {
     },
   });
 
-  console.log("🔐 Creando roles y permisos...");
+  console.log("Creando roles y permisos...");
   const roles = await Promise.all(
     ROLES.map((role) =>
       prisma.role.create({
@@ -216,7 +217,7 @@ async function main() {
   );
   await prisma.rolePermission.createMany({ data: rolePermissionData });
 
-  console.log("🏛️ Creando dependencias COOTRANSHUILA (códigos TRD)...");
+  console.log("Creando dependencias COOTRANSHUILA (códigos TRD)...");
   const dependencyDefs = [
     { code: "10", name: "Consejo de Administración", description: "Órgano de dirección" },
     { code: "20", name: "Gerencia", description: "Dirección general de la cooperativa" },
@@ -256,7 +257,7 @@ async function main() {
     return depByCode[depAlias[code] ?? code];
   }
 
-  console.log("📋 Creando instrumento TRD...");
+  console.log("Creando instrumento TRD...");
   const trdInstrument = await prisma.archivalInstrument.create({
     data: {
       organizationId: org.id,
@@ -271,7 +272,7 @@ async function main() {
     },
   });
 
-  console.log("📚 Creando series y subseries documentales (TRD)...");
+  console.log("Creando series y subseries documentales (TRD)...");
   type SubDef = {
     code: string;
     name: string;
@@ -530,7 +531,7 @@ async function main() {
     ],
   });
 
-  console.log("📄 Creando tipos documentales...");
+  console.log("Creando tipos documentales...");
   const docTypeDefs = [
     { code: "PDF", name: "Documento PDF", category: "FORMAT" },
     { code: "IMG", name: "Imagen Escaneada", category: "FORMAT" },
@@ -652,7 +653,7 @@ async function main() {
   ]);
   const [superUser, systemUser, docAdmin, deptWorker, deptWorker2, consultUser] = users;
 
-  console.log("📍 Creando jerarquía de ubicaciones (Edificio→Piso→Sala→Estantería→Nivel)...");
+  console.log("Creando jerarquía de ubicaciones (Edificio→Piso→Sala→Estantería→Nivel)...");
   const building = await prisma.location.create({
     data: {
       organizationId: org.id,
@@ -698,7 +699,7 @@ async function main() {
     },
   });
 
-  console.log("📦 Creando cajas y carpetas...");
+  console.log("Creando cajas y carpetas...");
   const boxes = await Promise.all(
     ["CAJ-001", "CAJ-002", "CAJ-003", "CAJ-004", "CAJ-005"].map((code, i) =>
       prisma.box.create({
@@ -732,7 +733,7 @@ async function main() {
     ),
   );
 
-  console.log("📁 Creando expedientes...");
+  console.log("Creando expedientes...");
   const expedienteDefs = [
     { code: "EXP-2021-001", name: "Contratación servicios TI 2021", dep: "COM", status: DocumentStatus.CLOSED, year: 2021 },
     { code: "EXP-2021-002", name: "Proceso disciplinario 2021", dep: "JUR", status: DocumentStatus.CLOSED, year: 2021 },
@@ -770,7 +771,7 @@ async function main() {
   );
   const expByCode = Object.fromEntries(expedientes.map((e) => [e.code, e]));
 
-  console.log("📄 Creando documentos...");
+  console.log("Creando documentos...");
   const documentDefs: {
     code: string;
     name: string;
@@ -856,7 +857,7 @@ async function main() {
 
   const now = new Date();
 
-  console.log("📋 Creando documentos en flujo de aprobación...");
+  console.log("Creando documentos en flujo de aprobación...");
 
   // PDF mínimo válido para demo de vista previa del Jefe
   const { writeFile, mkdir } = await import("fs/promises");
@@ -1065,7 +1066,7 @@ startxref
     ],
   });
 
-  console.log("🔄 Creando préstamos (plazo 24h desde aprobación)...");
+  console.log("Creando préstamos (plazo 24h desde aprobación)...");
   const twoWeeksAgo = new Date(now);
   twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
   const approvedRecent = new Date(now.getTime() - 2 * 60 * 60 * 1000); // hace 2h
@@ -1136,7 +1137,7 @@ startxref
     ],
   });
 
-  console.log("🔀 Creando transferencias...");
+  console.log("Creando transferencias...");
   await prisma.transfer.createMany({
     data: [
       {
@@ -1183,7 +1184,7 @@ startxref
     ],
   });
 
-  console.log("📋 Complementando instrumentos (POLICY)...");
+  console.log("Complementando instrumentos (POLICY)...");
   await prisma.archivalInstrument.create({
     data: {
       organizationId: org.id,
@@ -1196,7 +1197,7 @@ startxref
     },
   });
 
-  console.log("🗑️ Creando proceso demo de eliminación...");
+  console.log("Creando proceso demo de eliminación...");
   await prisma.disposalProcess.create({
     data: {
       organizationId: org.id,
@@ -1210,7 +1211,7 @@ startxref
     },
   });
 
-  console.log("📝 Creando registros de auditoría...");
+  console.log("Creando registros de auditoría...");
   await prisma.auditLog.createMany({
     data: [
       { organizationId: org.id, userId: superUser.id, action: "login", module: "auth", entityType: "User", entityId: superUser.id, ipAddress: "192.168.1.10" },
@@ -1224,7 +1225,7 @@ startxref
     ],
   });
 
-  console.log("🔔 Creando notificaciones...");
+  console.log("Creando notificaciones...");
   await prisma.notification.createMany({
     data: [
       {
@@ -1278,7 +1279,7 @@ startxref
     ],
   });
 
-  console.log("⚙️ Creando configuración del sistema...");
+  console.log("Creando configuración del sistema...");
   await prisma.systemSetting.createMany({
     data: [
       {
@@ -1304,7 +1305,7 @@ startxref
     ],
   });
 
-  console.log("🔑 Creando licencia...");
+  console.log("Creando licencia...");
   const licenseExpiry = new Date();
   licenseExpiry.setFullYear(licenseExpiry.getFullYear() + 1);
 
@@ -1319,7 +1320,7 @@ startxref
     },
   });
 
-  console.log("💾 Creando registro de backup...");
+  console.log("Creando registro de backup...");
   await prisma.backupRecord.create({
     data: {
       organizationId: org.id,
@@ -1329,7 +1330,7 @@ startxref
     },
   });
 
-  console.log("\n✅ Seed completado exitosamente");
+  console.log("\n Seed completado exitosamente");
   console.log(`   Organización: ${org.name}`);
   console.log(`   Roles: ${roles.length} | Permisos: ${permissions.length}`);
   console.log(`   Dependencias: ${dependencies.length} | Usuarios: ${users.length + 1}`);
@@ -1339,7 +1340,7 @@ startxref
 
 main()
   .catch((e) => {
-    console.error("❌ Error en seed:", e);
+    console.error("Error en seed:", e);
     process.exit(1);
   })
   .finally(async () => {

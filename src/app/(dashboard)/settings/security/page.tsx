@@ -6,11 +6,16 @@ import { StatusBadge } from "@/shared/list/status-labels";
 import { SecuritySettingsForm } from "@/modules/system-admin/ui/security-settings-form";
 import { MfaSetupPanel } from "@/modules/system-admin/ui/mfa-setup-panel";
 
-export default async function SettingsSecurityPage() {
+export default async function SettingsSecurityPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ mfa?: string }>;
+}) {
   const user = requirePageAccess(await getSession(), {
     permission: "settings.read",
     roles: ["SUPER_ADMIN", "SYSTEM_ADMIN", "DOC_ADMIN"],
   });
+  const sp = await searchParams;
 
   const [policySetting, emailSetting] = await Promise.all([
     prisma.systemSetting.findFirst({
@@ -56,9 +61,16 @@ export default async function SettingsSecurityPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-slate-900">Seguridad</h1>
+        <h1 className="page-title text-xl font-bold text-slate-900 sm:text-2xl">Seguridad</h1>
         <p className="text-sm text-slate-500">Políticas de acceso y protección</p>
       </div>
+
+      {sp.mfa === "required" && (
+        <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+          Debe activar MFA antes de continuar. En producción, los administradores no pueden usar
+          SIGAF sin autenticación en dos pasos.
+        </div>
+      )}
 
       <SecuritySettingsForm initial={initial} />
 

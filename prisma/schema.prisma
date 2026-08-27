@@ -106,6 +106,17 @@ enum FinalDisposition {
   DIGITALIZATION
 }
 
+/// Serie simple (un tipo documental) vs compuesta (varios tipos en un expediente)
+enum SeriesKind {
+  SIMPLE
+  COMPOSITE
+}
+
+enum FoliationMethod {
+  MANUAL_PENCIL
+  OTHER
+}
+
 /// Flujo legal de eliminación documental
 enum DisposalStatus {
   DRAFT
@@ -145,6 +156,37 @@ enum NotificationType {
   ALERT
 }
 
+/// Pasos del proceso documental (metodología AGN / videos COOTRANSHUILA)
+enum ArchivalProcessStepKey {
+  IDENTIFICATION
+  CLASSIFICATION
+  ORDERING
+  FOLIATION
+  LABELING
+  FUID_INVENTORY
+}
+
+/// Evento que inicia el cómputo de retención (TRD)
+enum RetentionStartEvent {
+  EXPEDIENTE_CLOSE
+  LAST_DOCUMENT
+  TRAMITE_END
+  OTHER
+}
+
+enum DocumentSupport {
+  PHYSICAL
+  ELECTRONIC
+  HYBRID
+}
+
+enum InventoryStatus {
+  DRAFT
+  IN_PREPARATION
+  VALIDATED
+  SENT
+}
+
 model Organization {
   id        String   @id @default(cuid())
   name      String
@@ -168,6 +210,7 @@ model Organization {
   instruments      ArchivalInstrument[]
   disposalProcesses DisposalProcess[]
   physicalInventories PhysicalInventory[]
+  documentInventories DocumentInventory[]
   trdVersions      TrdVersion[]
   settings         SystemSetting[]
   licenses         License[]
@@ -175,6 +218,7 @@ model Organization {
   notifications    Notification[]
   auditLogs        AuditLog[]
   jobs             Job[]
+  uploadIntents    UploadIntent[]
 
   @@map("organizations")
 }
@@ -252,6 +296,7 @@ model User {
   documentsOwned   Document[]           @relation("DocumentResponsible")
   documentsSubmitted Document[]         @relation("DocumentSubmittedBy")
   expedientesOwned Expediente[]         @relation("ExpedienteResponsible")
+  inventoriesCreated DocumentInventory[] @relation("InventoryCreator")
   loansRequested   Loan[]               @relation("LoanRequester")
   loansApproved    Loan[]               @relation("LoanApprover")
   createdVersions  DocumentVersion[]
@@ -346,6 +391,8 @@ model DocumentarySeries {
   valueFiscal         Boolean @default(false)
   valueAccounting     Boolean @default(false)
   valueHistorical     Boolean @default(false)
+  /// Serie simple = un solo tipo documental · compuesta = varios tipos en el expediente
+  seriesKind     SeriesKind @default(COMPOSITE)
   active         Boolean   @default(true)
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
@@ -355,6 +402,7 @@ model DocumentarySeries {
   instrument   ArchivalInstrument?   @relation(fields: [instrumentId], references: [id])
   subseries    DocumentarySubseries[]
   documents    Document[]
+  expedientes  Expediente[]
 
   @@unique([organizationId, code])
   @@index([organizationId])
@@ -384,6 +432,7 @@ model DocumentarySubseries {
 
   series    DocumentarySeries @relation(fields: [seriesId], references: [id], onDelete: Cascade)
   documents Document[]
+  expedientes Expediente[]
 
   @@unique([seriesId, code])
   @@map("documentary_subseries")
@@ -413,28 +462,62 @@ model Expediente {
   id             String         @id @default(cuid())
   organizationId String
   dependencyId   String
+  seriesId       String?
+  subseriesId    String?
   responsibleId  String?
   code           String
+  /// Asunto del trámite (no nombre del funcionario)
   name           String
+  subject        String?
+  subsection     String?
+  expedienteType String         @default("Serie compuesta")
+  year           Int?
   description    String?
   status         DocumentStatus @default(ACTIVE)
   archivalPhase  ArchivalPhase  @default(MANAGEMENT)
+  /// { IDENTIFICATION: true, CLASSIFICATION: true, ... }
+  processSteps   Json           @default("{}")
+  retentionStartEvent RetentionStartEvent?
+  retentionStartDate  DateTime?
+  appliedRetentionMgmt     Int?
+  appliedRetentionCentral  Int?
+  appliedFinalDisposition  FinalDisposition?
+  retentionDueAt DateTime?
+  foliationVerified Boolean     @default(false)
+  physicalFoliationDone Boolean @default(false)
+  foliationMethod FoliationMethod?
+  foliationBy     String?
+  foliationAt     DateTime?
+  chronologicalOrder Boolean  @default(false)
+  folderNumber   String?
+  boxCode        String?
+  folioStart     Int?
+  folioEnd       Int?
+  dateStart      DateTime?
+  dateEnd        DateTime?
   openedAt       DateTime       @default(now())
   closedAt       DateTime?
   transferredAt  DateTime?
+  /// Optimistic concurrency — incrementa en cada edición
+  version        Int            @default(1)
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
   deletedAt      DateTime?
 
-  organization Organization @relation(fields: [organizationId], references: [id])
-  dependency   Dependency   @relation(fields: [dependencyId], references: [id])
-  responsible  User?        @relation("ExpedienteResponsible", fields: [responsibleId], references: [id])
+  organization Organization          @relation(fields: [organizationId], references: [id])
+  dependency   Dependency            @relation(fields: [dependencyId], references: [id])
+  series       DocumentarySeries?    @relation(fields: [seriesId], references: [id])
+  subseries    DocumentarySubseries? @relation(fields: [subseriesId], references: [id])
+  responsible  User?                 @relation("ExpedienteResponsible", fields: [responsibleId], references: [id])
   documents    Document[]
 
   @@unique([organizationId, code])
   @@index([organizationId, dependencyId, status])
   @@index([organizationId, archivalPhase])
   @@index([organizationId, deletedAt, createdAt])
+  @@index([seriesId])
+  @@index([subseriesId])
+  @@index([retentionDueAt])
   @@map("expedientes")
 }
 
@@ -466,12 +549,20 @@ model Document {
   imageUrl       String?
   filePath       String?
   fileHash       String?
+  /// NONE | PENDING | READY | REJECTED — pipeline hash/OCR/antivirus
+  fileScanStatus String         @default("NONE")
+  thumbnailKey   String?
   searchText     String?
   /// Retención/disposición calculadas desde TRD / valores
   appliedRetentionMgmt Int?
   appliedRetentionCentral Int?
   appliedFinalDisposition FinalDisposition?
   retentionDueAt DateTime?
+  /// Soporte documental (físico / electrónico / híbrido)
+  support        DocumentSupport @default(PHYSICAL)
+  electronicFormat String?
+  /// Orden dentro del expediente (ordenación cronológica)
+  sortOrder      Int            @default(0)
   submittedAt    DateTime?
   approvedDeptAt DateTime?
   archivedAt     DateTime?
@@ -505,6 +596,10 @@ model Document {
   @@index([barcode])
   @@index([name])
   @@index([searchText])
+  @@index([expedienteId])
+  @@index([retentionDueAt])
+  @@index([folderId])
+  @@index([fileScanStatus])
   @@map("documents")
 }
 
@@ -687,6 +782,8 @@ model Transfer {
   checklistChronological Boolean @default(false)
   checklistInventory     Boolean @default(false)
   checklistBoxFolder     Boolean @default(false)
+  checklistRetentionMet  Boolean @default(false)
+  checklistApproval      Boolean @default(false)
   inventoryFilePath      String?
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
@@ -820,6 +917,7 @@ model AuditLog {
   @@index([organizationId, createdAt])
   @@index([userId, createdAt])
   @@index([module, action])
+  @@index([entityType, entityId])
   @@map("audit_logs")
 }
 
@@ -900,6 +998,88 @@ model Job {
 
   @@index([status, createdAt])
   @@map("jobs")
+}
+
+/// Intento de subida directa a object storage (metadatos, no el binario)
+model UploadIntent {
+  id             String   @id @default(cuid())
+  organizationId String
+  userId         String
+  storageKey     String
+  originalName   String
+  mimeType       String
+  sizeBytes      Int
+  /// document | attachment | version | digitize | import
+  purpose        String
+  targetId       String?
+  extra          Json?
+  status         String   @default("PENDING")
+  expiresAt      DateTime
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@index([organizationId, status, createdAt])
+  @@index([storageKey])
+  @@map("upload_intents")
+}
+
+/// Inventario documental FUID (Formato Único AGN)
+model DocumentInventory {
+  id             String          @id @default(cuid())
+  organizationId String
+  code           String
+  title          String
+  transferCode   String?
+  /// Cabecera FUID AGN (Acuerdo 001 de 2024, Anexo 3)
+  entitySender      String?
+  entityProducer    String?
+  adminUnit         String?
+  producerOffice    String?
+  objectDescription String?
+  status         InventoryStatus @default(DRAFT)
+  createdById    String?
+  validatedAt    DateTime?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  organization Organization            @relation(fields: [organizationId], references: [id])
+  createdBy    User?                   @relation("InventoryCreator", fields: [createdById], references: [id])
+  items        DocumentInventoryItem[]
+
+  @@unique([organizationId, code])
+  @@index([organizationId, status])
+  @@map("document_inventories")
+}
+
+model DocumentInventoryItem {
+  id           String  @id @default(cuid())
+  inventoryId  String
+  expedienteId String?
+  documentId   String?
+  orderNumber  Int?
+  seriesName   String?
+  subseriesName String?
+  subject      String?
+  expedienteCode String?
+  unitName     String?
+  dateStart    DateTime?
+  dateEnd      DateTime?
+  supportPhysical   Boolean @default(false)
+  supportElectronic Boolean @default(false)
+  boxCode      String?
+  folderNumber String?
+  folioCount   Int?
+  format       String?
+  quantity     Int?
+  sizeBytes    Int?
+  location     String?
+  notes        String?
+
+  inventory DocumentInventory @relation(fields: [inventoryId], references: [id], onDelete: Cascade)
+
+  @@index([inventoryId])
+  @@map("document_inventory_items")
 }
 
 model RecycleBinItem {

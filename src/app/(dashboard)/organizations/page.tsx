@@ -18,7 +18,7 @@ export default async function OrganizationsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-slate-900">Organizaciones</h1>
+        <h1 className="page-title text-xl font-bold text-slate-900 sm:text-2xl">Organizaciones</h1>
         <p className="text-sm text-slate-500">Entidades y tenencia del sistema</p>
       </div>
 

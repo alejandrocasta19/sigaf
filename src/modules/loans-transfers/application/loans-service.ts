@@ -70,11 +70,16 @@ async function notifyDocAdmins(
   }
 }
 
-export async function listLoans(user: SessionUser, status?: LoanStatus | null) {
+export async function listLoans(
+  user: SessionUser,
+  status?: LoanStatus | null,
+  opts?: { cursor?: string | null; take?: number }
+) {
   const where: Prisma.LoanWhereInput = { ...loanScope(user) };
   if (status) where.status = status;
+  const take = opts?.take ?? 50;
 
-  return prisma.loan.findMany({
+  const items = await prisma.loan.findMany({
     where,
     include: {
       document: {
@@ -94,9 +99,17 @@ export async function listLoans(user: SessionUser, status?: LoanStatus | null) {
       requester: true,
       approver: true,
     },
-    orderBy: { requestedAt: "desc" },
-    take: 100,
+    orderBy: [{ requestedAt: "desc" }, { id: "desc" }],
+    take: take + 1,
+    ...(opts?.cursor ? { cursor: { id: opts.cursor }, skip: 1 } : {}),
   });
+  const hasMore = items.length > take;
+  const page = hasMore ? items.slice(0, take) : items;
+  return {
+    items: page,
+    nextCursor: hasMore ? (page[page.length - 1]?.id ?? null) : null,
+    hasMore,
+  };
 }
 
 export async function listAvailableDocumentsForLoan(user: SessionUser, q?: string) {

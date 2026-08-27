@@ -1,8 +1,18 @@
 import { prisma } from "@/shared/kernel/prisma";
 import type { SessionUser } from "@/shared/kernel/types";
 import { DocumentStatus, Prisma } from "@prisma/client";
+import { cacheGetJson, cacheSetJson } from "@/shared/kernel/redis";
 
 export async function getDashboardData(user: SessionUser) {
+  const cacheKey = `dash:v2:${user.organizationId}:${user.roleCode}:${user.dependencyId ?? "all"}`;
+  const cached = await cacheGetJson<Awaited<ReturnType<typeof loadDashboard>>>(cacheKey);
+  if (cached) return cached;
+  const data = await loadDashboard(user);
+  await cacheSetJson(cacheKey, data, 45);
+  return data;
+}
+
+async function loadDashboard(user: SessionUser) {
   const orgId = user.organizationId;
   const depFilter =
     (user.roleCode === "DEPT_HEAD" || user.roleCode === "DEPT_WORKER") &&
@@ -21,6 +31,9 @@ export async function getDashboardData(user: SessionUser) {
     deletedAt: null,
     ...depFilter,
   };
+
+  const now = new Date();
+  const dueSoonUntil = new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000);
 
   const [
     totalDocuments,
@@ -42,13 +55,20 @@ export async function getDashboardData(user: SessionUser) {
     instruments,
     settings,
     lastBackup,
+    retentionOverdueCount,
+    retentionDueSoonCount,
+    withoutSeriesCount,
+    retentionOverdueItems,
+    retentionDueSoonItems,
   ] = await Promise.all([
     prisma.document.count({ where: docWhere }),
     prisma.expediente.count({ where: expWhere }),
     prisma.box.count({ where: { organizationId: orgId, deletedAt: null } }),
     prisma.folder.count({ where: { organizationId: orgId, deletedAt: null } }),
     prisma.user.count({ where: { organizationId: orgId, status: "ACTIVE", deletedAt: null } }),
-    prisma.auditLog.count({ where: { organizationId: orgId } }),
+    prisma.auditLog.count({
+      where: { organizationId: orgId, createdAt: { gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) } },
+    }),
     prisma.loan.count({
       where: { organizationId: orgId, status: { in: ["ACTIVE", "APPROVED", "OVERDUE"] } },
     }),
@@ -74,7 +94,9 @@ export async function getDashboardData(user: SessionUser) {
     `,
     prisma.auditLog.findMany({
       where: { organizationId: orgId },
-      include: { user: true },
+      include: {
+        user: { select: { firstName: true, lastName: true, email: true } },
+      },
       orderBy: { createdAt: "desc" },
       take: 8,
     }),
@@ -106,8 +128,8 @@ export async function getDashboardData(user: SessionUser) {
           : {}),
       },
       include: {
-        document: true,
-        requester: true,
+        document: { select: { id: true, code: true, name: true } },
+        requester: { select: { firstName: true, lastName: true } },
       },
       orderBy: { dueDate: "asc" },
       take: 5,
@@ -122,6 +144,51 @@ export async function getDashboardData(user: SessionUser) {
     prisma.backupRecord.findFirst({
       where: { organizationId: orgId },
       orderBy: { createdAt: "desc" },
+    }),
+    prisma.expediente.count({
+      where: { ...expWhere, retentionDueAt: { not: null, lte: now } },
+    }),
+    prisma.expediente.count({
+      where: {
+        ...expWhere,
+        retentionDueAt: { gt: now, lte: dueSoonUntil },
+      },
+    }),
+    prisma.expediente.count({
+      where: { ...expWhere, seriesId: null },
+    }),
+    prisma.expediente.findMany({
+      where: { ...expWhere, retentionDueAt: { not: null, lte: now } },
+      select: {
+        id: true,
+        code: true,
+        name: true,
+        subject: true,
+        retentionDueAt: true,
+        appliedRetentionMgmt: true,
+        appliedRetentionCentral: true,
+        dependency: { select: { name: true } },
+      },
+      orderBy: { retentionDueAt: "asc" },
+      take: 8,
+    }),
+    prisma.expediente.findMany({
+      where: {
+        ...expWhere,
+        retentionDueAt: { gt: now, lte: dueSoonUntil },
+      },
+      select: {
+        id: true,
+        code: true,
+        name: true,
+        subject: true,
+        retentionDueAt: true,
+        appliedRetentionMgmt: true,
+        appliedRetentionCentral: true,
+        dependency: { select: { name: true } },
+      },
+      orderBy: { retentionDueAt: "asc" },
+      take: 8,
     }),
   ]);
 
@@ -163,6 +230,9 @@ export async function getDashboardData(user: SessionUser) {
       activeLoans,
       pendingTransfers,
       locationCount,
+      retentionOverdue: retentionOverdueCount,
+      retentionDueSoon: retentionDueSoonCount,
+      withoutSeries: withoutSeriesCount,
     },
     charts: {
       byDependency: docsByDep.map((d) => ({
@@ -186,5 +256,9 @@ export async function getDashboardData(user: SessionUser) {
     instruments,
     settings: Object.fromEntries(settings.map((s) => [s.key, s.value])),
     lastBackup,
+    retention: {
+      overdue: retentionOverdueItems,
+      dueSoon: retentionDueSoonItems,
+    },
   };
 }

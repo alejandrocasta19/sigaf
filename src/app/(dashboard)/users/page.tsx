@@ -1,9 +1,10 @@
 import { getSession } from "@/shared/kernel/auth";
 import { requirePageAccess } from "@/shared/kernel/page-access";
 import { prisma } from "@/shared/kernel/prisma";
-import { USER_SECRET_OMIT } from "@/shared/kernel/user-privacy";
 import { Card, CardContent, CardHeader, CardTitle } from "@/shared/ui/card";
 import { UsersManager } from "@/modules/identity/ui/users-manager";
+import { listUsers } from "@/modules/identity";
+import Link from "next/link";
 
 export default async function UsersPage() {
   const session = await getSession();
@@ -13,14 +14,8 @@ export default async function UsersPage() {
 
   const canManage = ["SUPER_ADMIN", "SYSTEM_ADMIN", "DOC_ADMIN"].includes(user.roleCode);
 
-  const [users, roles, dependencies] = await Promise.all([
-    prisma.user.findMany({
-      where: { organizationId: user.organizationId, deletedAt: null },
-      omit: USER_SECRET_OMIT,
-      include: { role: true, dependency: true },
-      orderBy: { createdAt: "desc" },
-      take: 100,
-    }),
+  const [{ items: users }, roles, dependencies] = await Promise.all([
+    listUsers(user, { take: 100 }),
     prisma.role.findMany({ orderBy: { accessLevel: "desc" } }),
     prisma.dependency.findMany({
       where: { organizationId: user.organizationId, deletedAt: null, active: true },
@@ -31,9 +26,14 @@ export default async function UsersPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-slate-900">Usuarios</h1>
+        <h1 className="page-title text-xl font-bold text-slate-900 sm:text-2xl">Usuarios</h1>
         <p className="text-sm text-slate-500">
-          Crea usuarios (nombre, correo, contraseña), cambia roles y elimina cuentas
+          Crea usuarios (nombre, correo, contraseña), cambia roles y elimina cuentas.
+          Las dependencias se gestionan en{" "}
+          <Link href="/dependencies" className="font-medium text-blue-700 hover:underline">
+            Dependencias
+          </Link>
+          .
         </p>
       </div>
 

@@ -11,6 +11,7 @@ import {
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/shared/ui/card";
 import { Button } from "@/shared/ui/button";
+import { enqueueAndDownloadReport, directUpload, pollJob } from "@/shared/ui/direct-upload";
 
 const REPORTS = [
   {
@@ -39,24 +40,6 @@ const REPORTS = [
   },
 ];
 
-async function downloadReport(type: string, format: "xlsx" | "pdf" | "csv") {
-  const res = await fetch(`/api/v1/reports?type=${type}&format=${format}`);
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || "Error al exportar");
-  }
-  const blob = await res.blob();
-  const cd = res.headers.get("Content-Disposition") || "";
-  const match = cd.match(/filename="?([^"]+)"?/);
-  const filename = match?.[1] || `reporte.${format}`;
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
 export function ReportsPanel({ canImport }: { canImport: boolean }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
@@ -69,7 +52,7 @@ export function ReportsPanel({ canImport }: { canImport: boolean }) {
     const key = `${type}-${format}`;
     setBusy(key);
     try {
-      await downloadReport(type, format);
+      await enqueueAndDownloadReport(type, format);
       toast.success(`Reporte ${format.toUpperCase()} descargado`);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Error");
@@ -83,18 +66,16 @@ export function ReportsPanel({ canImport }: { canImport: boolean }) {
     setImporting(true);
     setImportResult(null);
     try {
-      const fd = new FormData();
-      fd.append("file", file);
-      const res = await fetch("/api/v1/documents/import", { method: "POST", body: fd });
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        toast.error(data.error || "Error al importar");
-        return;
+      const result = await directUpload(file, { purpose: "import" });
+      const jobId = (result as { jobId?: string }).jobId;
+      if (jobId) {
+        const job = await pollJob(jobId);
+        const data = job.result as { created?: number; errors?: string[] };
+        setImportResult({ created: data.created ?? 0, errors: data.errors ?? [] });
+        toast.success(`${data.created ?? 0} documento(s) importados`);
       }
-      setImportResult({ created: data.data.created, errors: data.data.errors });
-      toast.success(`${data.data.created} documento(s) importados`);
-    } catch {
-      toast.error("Error de conexión");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Error de conexión");
     } finally {
       setImporting(false);
     }

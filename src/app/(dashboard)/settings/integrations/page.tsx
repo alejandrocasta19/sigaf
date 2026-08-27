@@ -20,7 +20,7 @@ export default async function SettingsIntegrationsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-slate-900">Integraciones</h1>
+        <h1 className="page-title text-xl font-bold text-slate-900 sm:text-2xl">Integraciones</h1>
         <p className="text-sm text-slate-500">Conectores y APIs externas</p>
       </div>
 

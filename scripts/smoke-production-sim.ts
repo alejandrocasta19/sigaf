@@ -86,6 +86,60 @@ async function api(
   return { res, json, ok: pass };
 }
 
+async function uploadViaIntent(
+  name: string,
+  cookie: string,
+  opts: {
+    purpose: string;
+    targetId?: string;
+    fileName: string;
+    mimeType: string;
+    blob: Blob;
+    expectStatus?: number | number[];
+  }
+) {
+  const intent = await api(
+    `${name} intent`,
+    cookie,
+    "/api/v1/uploads/intent",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        purpose: opts.purpose,
+        fileName: opts.fileName,
+        mimeType: opts.mimeType,
+        sizeBytes: opts.blob.size,
+        targetId: opts.targetId,
+      }),
+    },
+    [200, 201]
+  );
+  const signed = intent.json.data as { url?: string; headers?: Record<string, string>; intentId?: string } | undefined;
+  if (!signed?.url || !signed.intentId) return intent;
+
+  const putUrl = signed.url.startsWith("http") ? signed.url : `${BASE}${signed.url}`;
+  const t0 = Date.now();
+  const put = await fetch(putUrl, {
+    method: "PUT",
+    headers: signed.headers || { "Content-Type": opts.mimeType },
+    body: opts.blob,
+  });
+  results.push({
+    name: `${name} PUT storage`,
+    ok: put.ok,
+    detail: String(put.status),
+    ms: Date.now() - t0,
+  });
+
+  return api(
+    `${name} complete`,
+    cookie,
+    "/api/v1/uploads/complete",
+    { method: "POST", body: JSON.stringify({ intentId: signed.intentId }) },
+    opts.expectStatus ?? [200]
+  );
+}
+
 async function main() {
   console.log(`\n=== SIGAF smoke sim @ ${BASE} ===\n`);
 
@@ -206,18 +260,17 @@ async function main() {
 
   // Digitize with tiny PDF-like buffer (plain text as .txt if PDF parse fails is ok)
   if (docId) {
-    const fd = new FormData();
     const blob = new Blob([`%PDF-1.1\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\nSMOKE ${stamp}`], {
       type: "application/pdf",
     });
-    fd.append("file", blob, `smoke-${stamp}.pdf`);
-    await api(
-      "POST digitize",
-      funcionario.cookie,
-      `/api/v1/documents/${docId}/digitize`,
-      { method: "POST", body: fd },
-      [200, 400]
-    );
+    await uploadViaIntent("POST digitize", funcionario.cookie, {
+      purpose: "digitize",
+      targetId: docId,
+      fileName: `smoke-${stamp}.pdf`,
+      mimeType: "application/pdf",
+      blob,
+      expectStatus: [200, 400],
+    });
 
     // Flujo completo: Jefe → Archivo → Transferencia AG→AC
     console.log("\n--- Flujo aprobación + transferencia ---\n");

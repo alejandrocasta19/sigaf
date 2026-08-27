@@ -29,7 +29,7 @@ export default async function LifecyclePage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-slate-900">
+        <h1 className="page-title text-xl font-bold text-slate-900 sm:text-2xl">
           Ciclo vital documental
           <GlossaryTip term="TRD" />
         </h1>
@@ -87,11 +87,11 @@ export default async function LifecyclePage() {
                 <p className="text-[11px] text-slate-400">{meta.lawRef}</p>
                 <div className="flex gap-4 border-t border-black/5 pt-3">
                   <div>
-                    <p className="text-2xl font-bold text-slate-900">{stats.documents[key]}</p>
+                    <p className="page-title text-xl font-bold text-slate-900 sm:text-2xl">{stats.documents[key]}</p>
                     <p className="text-xs text-slate-500">Documentos</p>
                   </div>
                   <div>
-                    <p className="text-2xl font-bold text-slate-900">{stats.expedientes[key]}</p>
+                    <p className="page-title text-xl font-bold text-slate-900 sm:text-2xl">{stats.expedientes[key]}</p>
                     <p className="text-xs text-slate-500">Expedientes</p>
                   </div>
                 </div>

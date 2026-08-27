@@ -4,8 +4,24 @@ import { mkdtemp, writeFile, rm } from "fs/promises";
 import { tmpdir } from "os";
 import { AppError } from "@/shared/kernel/http";
 
-/** 20 MB */
-export const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
+function envMb(name: string, fallback: number) {
+  const n = Number(process.env[name]);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+}
+
+/** Tope global (MB). Por tipo: UPLOAD_MAX_PDF_MB, UPLOAD_MAX_IMAGE_MB, UPLOAD_MAX_OFFICE_MB. */
+export function maxUploadBytesFor(ext: string): number {
+  const globalMb = envMb("UPLOAD_MAX_MB", 20);
+  const pdfMb = envMb("UPLOAD_MAX_PDF_MB", globalMb);
+  const imageMb = envMb("UPLOAD_MAX_IMAGE_MB", Math.min(globalMb, 10));
+  const officeMb = envMb("UPLOAD_MAX_OFFICE_MB", globalMb);
+  if (ext === ".pdf") return pdfMb * 1024 * 1024;
+  if ([".png", ".jpg", ".jpeg", ".gif", ".webp"].includes(ext)) return imageMb * 1024 * 1024;
+  if ([".doc", ".docx", ".xls", ".xlsx", ".csv"].includes(ext)) return officeMb * 1024 * 1024;
+  return globalMb * 1024 * 1024;
+}
+
+export const MAX_UPLOAD_BYTES = envMb("UPLOAD_MAX_MB", 20) * 1024 * 1024;
 
 const ALLOWED_EXT = new Set([
   ".pdf",
@@ -82,6 +98,11 @@ export type ValidatedUpload = {
   detectedMime: string;
 };
 
+export type AssertUploadOptions = {
+  /** Si se define, solo estas extensiones (p.ej. digitize: pdf/imágenes) */
+  allowedExt?: string[];
+};
+
 export function assertSafeFilename(originalName: string): { base: string; ext: string } {
   const raw = (originalName || "").trim();
   if (!raw) throw new AppError("Nombre de archivo vacío", 400);
@@ -139,7 +160,44 @@ export function assertSafeFilename(originalName: string): { base: string; ext: s
   return { base: `${stem}${ext}`, ext };
 }
 
-function sniffMime(buffer: Buffer): string | null {
+/** Validación previa a firmar URL (sin leer el binario). */
+export function assertUploadIntent(
+  file: { name: string; type?: string; size: number },
+  opts: AssertUploadOptions = {}
+): { safeOriginalName: string; ext: string; maxBytes: number; mimeType: string } {
+  if (!file.size || file.size <= 0) throw new AppError("Archivo vacío", 400);
+  const { base, ext } = assertSafeFilename(file.name);
+  if (opts.allowedExt?.length && !opts.allowedExt.map((e) => e.toLowerCase()).includes(ext)) {
+    throw new AppError(
+      `Tipo no permitido para esta operación (${ext}). Use: ${opts.allowedExt.join(", ")}`,
+      400
+    );
+  }
+  const maxBytes = maxUploadBytesFor(ext);
+  if (file.size > maxBytes) {
+    throw new AppError(
+      `El archivo supera el máximo de ${Math.round(maxBytes / (1024 * 1024))} MB`,
+      400
+    );
+  }
+  const allowedMimes = EXT_MIME[ext] ?? [];
+  const clientMime = (file.type || "").toLowerCase();
+  const mimeType = allowedMimes[0] || clientMime || "application/octet-stream";
+  if (
+    clientMime &&
+    clientMime !== "application/octet-stream" &&
+    allowedMimes.length &&
+    !allowedMimes.some((m) => clientMime === m || clientMime.startsWith(m.split("/")[0] + "/")) &&
+    !(ext === ".csv" && (clientMime === "text/plain" || clientMime.includes("csv")))
+  ) {
+    if (clientMime.includes("javascript") || clientMime.includes("executable")) {
+      throw new AppError(`MIME no permitido: ${clientMime}`, 400);
+    }
+  }
+  return { safeOriginalName: base, ext, maxBytes, mimeType };
+}
+
+export function sniffMime(buffer: Buffer): string | null {
   if (buffer.length >= 5 && buffer.subarray(0, 5).toString("ascii") === "%PDF-") {
     return "application/pdf";
   }
@@ -211,7 +269,7 @@ function mimeCompatible(ext: string, detected: string, clientMime?: string): boo
   return allowed.includes(detected);
 }
 
-async function scanWithClamAv(buffer: Buffer, safeName: string) {
+export async function scanWithClamAv(buffer: Buffer, safeName: string) {
   if (process.env.CLAMAV_ENABLED !== "true") return;
   const bin = process.env.CLAMAV_BIN || "clamdscan";
   const dir = await mkdtemp(path.join(tmpdir(), "sigaf-up-"));
@@ -244,11 +302,6 @@ async function scanWithClamAv(buffer: Buffer, safeName: string) {
   }
 }
 
-export type AssertUploadOptions = {
-  /** Si se define, solo estas extensiones (p.ej. digitize: pdf/imágenes) */
-  allowedExt?: string[];
-};
-
 /**
  * Valida tamaño, nombre, doble extensión, magic bytes y (opcional) ClamAV.
  */
@@ -258,14 +311,14 @@ export async function assertAllowedUpload(
   opts: AssertUploadOptions = {}
 ): Promise<ValidatedUpload> {
   if (buffer.byteLength <= 0) throw new AppError("Archivo vacío", 400);
-  if (buffer.byteLength > MAX_UPLOAD_BYTES) {
+  const { base, ext } = assertSafeFilename(file.name);
+  const maxBytes = maxUploadBytesFor(ext);
+  if (buffer.byteLength > maxBytes) {
     throw new AppError(
-      `El archivo supera el máximo de ${MAX_UPLOAD_BYTES / (1024 * 1024)} MB`,
+      `El archivo supera el máximo de ${Math.round(maxBytes / (1024 * 1024))} MB`,
       400
     );
   }
-
-  const { base, ext } = assertSafeFilename(file.name);
   if (opts.allowedExt?.length && !opts.allowedExt.map((e) => e.toLowerCase()).includes(ext)) {
     throw new AppError(
       `Tipo no permitido para esta operación (${ext}). Use: ${opts.allowedExt.join(", ")}`,

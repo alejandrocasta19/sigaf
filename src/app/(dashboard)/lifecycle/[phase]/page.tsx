@@ -42,7 +42,7 @@ export default async function LifecyclePhasePage({ params }: Props) {
         </Link>
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant={meta.badge}>{meta.phaseLabel}</Badge>
-          <h1 className="text-2xl font-bold text-slate-900">{meta.name}</h1>
+          <h1 className="page-title text-xl font-bold text-slate-900 sm:text-2xl">{meta.name}</h1>
         </div>
         <p className="mt-1 max-w-3xl text-sm text-slate-500">{meta.description}</p>
         <p className="mt-1 text-xs text-slate-400">{meta.lawRef}</p>

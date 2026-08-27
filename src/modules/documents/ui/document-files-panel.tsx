@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Upload, Download, History, Paperclip, Loader2, Eye } from "lucide-react";
+import { directUpload } from "@/shared/ui/direct-upload";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/shared/ui/card";
 import { Button } from "@/shared/ui/button";
@@ -50,24 +51,18 @@ export function DocumentFilesPanel({
     if (!file) return;
     setUploadingVersion(true);
     try {
-      const fd = new FormData();
-      fd.append("file", file);
-      if (note) fd.append("changeNote", note);
-      const res = await fetch(`/api/v1/documents/${documentId}/versions`, {
-        method: "POST",
-        body: fd,
+      const result = await directUpload(file, {
+        purpose: "version",
+        targetId: documentId,
+        extra: note ? { changeNote: note } : undefined,
       });
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        toast.error(data.error || "Error al subir versión");
-        return;
-      }
-      setVersions((prev) => [data.data, ...prev]);
+      const data = (result as { data?: Version }).data;
+      if (data) setVersions((prev) => [data, ...prev]);
       setNote("");
-      toast.success(`Versión ${data.data.version} creada`);
+      toast.success(`Versión ${data?.version ?? ""} creada`.trim());
       router.refresh();
-    } catch {
-      toast.error("Error de conexión");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Error de conexión");
     } finally {
       setUploadingVersion(false);
     }
@@ -77,22 +72,16 @@ export function DocumentFilesPanel({
     if (!file) return;
     setUploadingAtt(true);
     try {
-      const fd = new FormData();
-      fd.append("file", file);
-      const res = await fetch(`/api/v1/documents/${documentId}/attachments`, {
-        method: "POST",
-        body: fd,
+      const result = await directUpload(file, {
+        purpose: "attachment",
+        targetId: documentId,
       });
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        toast.error(data.error || "Error al subir anexo");
-        return;
-      }
-      setAttachments((prev) => [data.data, ...prev]);
+      const data = (result as { data?: Attachment }).data;
+      if (data) setAttachments((prev) => [data, ...prev]);
       toast.success("Anexo cargado");
       router.refresh();
-    } catch {
-      toast.error("Error de conexión");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Error de conexión");
     } finally {
       setUploadingAtt(false);
     }

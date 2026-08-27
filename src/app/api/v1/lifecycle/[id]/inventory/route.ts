@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { getSession } from "@/shared/kernel/auth";
+import { getSession, requirePermission } from "@/shared/kernel/auth";
 import { AppError, jsonError, jsonOk, writeAudit } from "@/shared/kernel/http";
 import { buildTransferInventory } from "@/modules/loans-transfers";
 import ExcelJS from "exceljs";
@@ -11,6 +11,7 @@ export async function GET(_req: NextRequest, ctx: Ctx) {
   try {
     const user = await getSession();
     if (!user) throw new AppError("No autenticado", 401);
+    requirePermission(user, "transfers.read");
     const { id } = await ctx.params;
     const format = _req.nextUrl.searchParams.get("format") ?? "json";
     const data = await buildTransferInventory(user, id);
@@ -61,6 +62,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
   try {
     const user = await getSession();
     if (!user) throw new AppError("No autenticado", 401);
+    requirePermission(user, "transfers.read");
     const { id } = await ctx.params;
     await writeAudit({
       user,

@@ -1,8 +1,8 @@
 import { NextRequest } from "next/server";
 import { z } from "zod";
-import { getSession } from "@/shared/kernel/auth";
+import { getSession, requirePermission } from "@/shared/kernel/auth";
 import { jsonOk, jsonError, writeAudit, AppError } from "@/shared/kernel/http";
-import { isAdminRole, setUserStatus } from "@/modules/identity";
+import { setUserStatus } from "@/modules/identity";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -14,7 +14,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
   try {
     const user = await getSession();
     if (!user) throw new AppError("No autenticado", 401);
-    if (!isAdminRole(user)) throw new AppError("Acceso denegado", 403);
+    requirePermission(user, "users.update");
 
     const { id } = await ctx.params;
     const body = schema.parse(await req.json());

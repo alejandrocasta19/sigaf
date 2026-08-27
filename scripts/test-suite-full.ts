@@ -87,6 +87,55 @@ async function api(
   return { res, json, ok: pass };
 }
 
+async function uploadViaIntent(
+  name: string,
+  cookie: string | null,
+  opts: {
+    purpose: string;
+    targetId?: string;
+    fileName: string;
+    mimeType: string;
+    blob: Blob;
+    expect?: number | number[];
+  }
+) {
+  const intent = await api(
+    `${name} intent`,
+    cookie,
+    "/api/v1/uploads/intent",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        purpose: opts.purpose,
+        fileName: opts.fileName,
+        mimeType: opts.mimeType,
+        sizeBytes: opts.blob.size,
+        targetId: opts.targetId,
+      }),
+    },
+    [200, 201]
+  );
+  const signed = intent.json.data as { url?: string; headers?: Record<string, string>; intentId?: string } | undefined;
+  if (!signed?.url || !signed.intentId) return intent;
+
+  const putUrl = signed.url.startsWith("http") ? signed.url : `${BASE}${signed.url}`;
+  const t0 = Date.now();
+  const put = await fetch(putUrl, {
+    method: "PUT",
+    headers: signed.headers || { "Content-Type": opts.mimeType },
+    body: opts.blob,
+  });
+  record(`${name} PUT storage`, put.ok, String(put.status), Date.now() - t0);
+
+  return api(
+    `${name} complete`,
+    cookie,
+    "/api/v1/uploads/complete",
+    { method: "POST", body: JSON.stringify({ intentId: signed.intentId }) },
+    opts.expect ?? 200
+  );
+}
+
 async function main() {
   const stamp = Date.now();
   console.log(`\n=== SIGAF test-suite-full @ ${BASE} ===\n`);
@@ -271,20 +320,18 @@ async function main() {
   // Digitalizar + flujo del primero
   const mainDoc = dayDocIds[0];
   if (mainDoc) {
-    const fd = new FormData();
-    fd.append(
-      "file",
-      new Blob(
-        [
-          `%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Kids[]/Count 0>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\nTexto indexable DIAOP ${stamp}`,
-        ],
-        { type: "application/pdf" }
-      ),
-      `diaop-${stamp}.pdf`
+    const blob = new Blob(
+      [
+        `%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Kids[]/Count 0>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\nTexto indexable DIAOP ${stamp}`,
+      ],
+      { type: "application/pdf" }
     );
-    await api(`DAY digitize`, funcionario.cookie, `/api/v1/documents/${mainDoc}/digitize`, {
-      method: "POST",
-      body: fd,
+    await uploadViaIntent(`DAY digitize`, funcionario.cookie, {
+      purpose: "digitize",
+      targetId: mainDoc,
+      fileName: `diaop-${stamp}.pdf`,
+      mimeType: "application/pdf",
+      blob,
     });
 
     await api("DAY start_dept_review", jefe.cookie, "/api/v1/documents/workflow", {

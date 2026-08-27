@@ -20,11 +20,13 @@ export function EditExpedienteForm({
   name: initialName,
   description: initialDescription,
   status: initialStatus,
+  version: initialVersion,
 }: {
   id: string;
   name: string;
   description: string | null;
   status: string;
+  version: number;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
@@ -38,9 +40,10 @@ export function EditExpedienteForm({
       const res = await fetch(`/api/v1/expedientes/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, description, status }),
+        body: JSON.stringify({ name, description, status, version: initialVersion }),
       });
       const json = await res.json();
+      if (res.status === 409) throw new Error(json.error || "Conflicto de edición");
       if (!res.ok) throw new Error(json.error || "Error");
       toast.success("Expediente actualizado");
       router.refresh();
@@ -91,3 +94,4 @@ export function EditExpedienteForm({
     </Card>
   );
 }
+

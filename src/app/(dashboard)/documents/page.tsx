@@ -45,25 +45,25 @@ export default async function DocumentsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-3">
+      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Documentos</h1>
+          <h1 className="page-title text-xl font-bold text-slate-900 sm:text-2xl">Documentos</h1>
           <p className="text-sm text-slate-500">
             Registro, versiones y anexos · flujo de aprobación por dependencia
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap">
           {canCreate && (
             <Link
               href="/documents/new"
-              className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
+              className="inline-flex items-center justify-center rounded-lg bg-blue-600 px-3 py-2.5 text-sm font-medium text-white hover:bg-blue-700 sm:py-2"
             >
               Cargar documento
             </Link>
           )}
           <Link
             href="/reports"
-            className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 sm:py-2"
           >
             Importar / Exportar
           </Link>
@@ -86,8 +86,8 @@ export default async function DocumentsPage() {
                 <th className="pb-3 font-medium">Versiones</th>
                 <th className="pb-3 font-medium">Anexos</th>
                 <th className="pb-3 font-medium">Estado</th>
-              </tr>                <th className="pb-3 font-medium">Creado</th>
-
+                <th className="pb-3 font-medium">Creado</th>
+              </tr>
             </thead>
             <tbody>
               {documents.map((d) => (

@@ -5,6 +5,7 @@ import { prisma } from "@/shared/kernel/prisma";
 import { jsonError, jsonOk, AppError } from "@/shared/kernel/http";
 import { notifyUser } from "@/shared/kernel/notify";
 import { createSessionResponse, MFA_COOKIE } from "@/shared/kernel/session-login";
+import { rateLimitHit, redisEnabled } from "@/shared/kernel/redis";
 import { z } from "zod";
 
 const schema = z.object({
@@ -17,11 +18,15 @@ const LOGIN_RATE_MAX =
   Number(process.env.LOGIN_RATE_MAX) ||
   (process.env.NODE_ENV === "production" ? 20 : 500);
 
-function rateLimit(ip: string) {
+async function rateLimit(ip: string) {
+  const windowMs = 15 * 60 * 1000;
+  if (redisEnabled()) {
+    return rateLimitHit(`login:${ip}`, LOGIN_RATE_MAX, windowMs);
+  }
   const now = Date.now();
   const entry = loginAttempts.get(ip);
   if (!entry || entry.resetAt < now) {
-    loginAttempts.set(ip, { count: 1, resetAt: now + 15 * 60 * 1000 });
+    loginAttempts.set(ip, { count: 1, resetAt: now + windowMs });
     return true;
   }
   if (entry.count >= LOGIN_RATE_MAX) return false;
@@ -75,7 +80,7 @@ async function alertFailedLogins(params: {
 export async function POST(req: NextRequest) {
   try {
     const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "local";
-    if (!rateLimit(ip)) throw new AppError("Demasiados intentos. Intente más tarde.", 429);
+    if (!(await rateLimit(ip))) throw new AppError("Demasiados intentos. Intente más tarde.", 429);
 
     const body = schema.parse(await req.json());
     const user = await prisma.user.findFirst({

@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import {
   disposalStatusLabel,
   listDisposalProcesses,
+  getTrdStats,
 } from "@/modules/archival-instruments";
 import { Card, CardContent, CardHeader, CardTitle } from "@/shared/ui/card";
 import { StatusBadge } from "@/shared/list/status-labels";
@@ -19,6 +20,7 @@ export default async function DisposalsPage() {
   if (!user) redirect("/login");
 
   const processes = await listDisposalProcesses(user);
+  const stats = await getTrdStats(user);
   const canManage = ["DOC_ADMIN", "SUPER_ADMIN", "SYSTEM_ADMIN"].includes(
     user.roleCode
   );
@@ -40,6 +42,17 @@ export default async function DisposalsPage() {
 
       {canManage && (
         <>
+          <div className="grid gap-4 sm:grid-cols-3">
+            {stats.byDisposition.map((d) => (
+              <Card key={d.name}>
+                <CardContent className="py-4">
+                  <p className="text-xs text-slate-500">Disposición final (series TRD)</p>
+                  <p className="font-semibold text-slate-900">{d.name}</p>
+                  <p className="text-2xl font-bold text-emerald-700">{d.value} series</p>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
           <DisposalCandidatesPanel />
           <DisposalActions />
         </>

@@ -8,6 +8,11 @@ import {
   mfaOtpauthUrl,
   verifyMfaToken,
 } from "@/shared/kernel/mfa";
+import { refreshSessionCookie } from "@/shared/kernel/session-login";
+import {
+  adminMfaRequiredInProduction,
+  isAdminRoleCode,
+} from "@/shared/kernel/production-policy";
 
 const confirmSchema = z.object({
   secret: z.string().min(16),
@@ -64,7 +69,7 @@ export async function POST(req: NextRequest) {
       entityId: user.id,
     });
 
-    return jsonOk({ enabled: true });
+    return (await refreshSessionCookie({ id: user.id, sessionId: user.sessionId })) ?? jsonOk({ enabled: true });
   } catch (e) {
     return jsonError(e);
   }
@@ -75,6 +80,10 @@ export async function DELETE(req: NextRequest) {
   try {
     const user = await getSession();
     if (!user) throw new AppError("No autenticado", 401);
+
+    if (adminMfaRequiredInProduction() && isAdminRoleCode(user.roleCode)) {
+      throw new AppError("MFA es obligatorio para administradores en producción", 403);
+    }
 
     const body = disableSchema.parse(await req.json());
     const dbUser = await prisma.user.findUnique({

@@ -1,21 +1,29 @@
+import Link from "next/link";
 import { getSession } from "@/shared/kernel/auth";
 import { redirect } from "next/navigation";
 import { prisma } from "@/shared/kernel/prisma";
 import { Card, CardContent, CardHeader, CardTitle } from "@/shared/ui/card";
 import { locationLevelLabel, listPhysicalInventories } from "@/modules/physical-archive";
 import { PhysicalArchivePanel } from "@/modules/physical-archive/ui/physical-archive-panel";
+import { PhysicalArchiveManager } from "@/modules/physical-archive/ui/physical-archive-manager";
 import { formatDate } from "@/shared/kernel/utils";
 import { GlossaryTip } from "@/modules/archival-instruments/ui/glossary-tip";
 
-export default async function PhysicalArchivePage() {
+export default async function PhysicalArchivePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ box?: string }>;
+}) {
   const user = await getSession();
   if (!user) redirect("/login");
+
+  const { box: highlightBox } = await searchParams;
 
   const canManage = ["DOC_ADMIN", "SUPER_ADMIN", "SYSTEM_ADMIN", "DEPT_HEAD"].includes(
     user.roleCode
   );
 
-  const [boxes, folders, locations, inventories] = await Promise.all([
+  const [boxes, folders, locations, inventories, expedientes] = await Promise.all([
     prisma.box.findMany({
       where: { organizationId: user.organizationId, deletedAt: null },
       include: { location: true, _count: { select: { folders: true } } },
@@ -31,19 +39,40 @@ export default async function PhysicalArchivePage() {
       orderBy: { code: "asc" },
     }),
     listPhysicalInventories(user),
+    prisma.expediente.findMany({
+      where: { organizationId: user.organizationId, deletedAt: null },
+      select: { id: true, code: true, name: true, subject: true, boxCode: true, folderNumber: true },
+      orderBy: { code: "asc" },
+      take: 200,
+    }),
   ]);
 
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-slate-900">
+        <h1 className="page-title text-xl font-bold text-slate-900 sm:text-2xl">
           Archivo Físico
           <GlossaryTip term="Archivo" />
         </h1>
         <p className="text-sm text-slate-500">
-          Organización: Edificio → Piso → Sala → Estantería → Nivel · procedencia y orden original
+          Edificio → Piso → Sala → Estantería → Nivel → Caja → Carpeta → Expediente
         </p>
       </div>
+
+      {canManage && (
+        <PhysicalArchiveManager
+          locations={locations.map((l) => ({
+            id: l.id,
+            code: l.code,
+            name: l.name,
+            level: l.level,
+            parentId: l.parentId,
+          }))}
+          boxes={boxes.map((b) => ({ id: b.id, code: b.code }))}
+          folders={folders.map((f) => ({ id: f.id, code: f.code, boxId: f.boxId }))}
+          expedientes={expedientes}
+        />
+      )}
 
       {canManage && (
         <PhysicalArchivePanel
@@ -104,9 +133,14 @@ export default async function PhysicalArchivePage() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card id="cajas">
           <CardHeader>
             <CardTitle>Cajas ({boxes.length})</CardTitle>
+            {highlightBox && (
+              <p className="text-xs text-teal-700">
+                Resaltada desde escáner QR: <strong>{highlightBox}</strong>
+              </p>
+            )}
           </CardHeader>
           <CardContent className="overflow-x-auto">
             <table className="w-full text-left text-sm">
@@ -115,18 +149,54 @@ export default async function PhysicalArchivePage() {
                   <th className="pb-2 font-medium">Código</th>
                   <th className="pb-2 font-medium">Ubicación</th>
                   <th className="pb-2 font-medium">Capacidad</th>
+                  <th className="pb-2 font-medium">Etiqueta</th>
                 </tr>
               </thead>
               <tbody>
-                {boxes.map((b) => (
-                  <tr key={b.id} className="border-b border-slate-50">
-                    <td className="py-2 font-medium">{b.code}</td>
-                    <td className="py-2 text-slate-600">{b.location?.name ?? "—"}</td>
-                    <td className="py-2 text-slate-600">
-                      {b.currentCount}/{b.capacity}
-                    </td>
-                  </tr>
-                ))}
+                {boxes.map((b) => {
+                  const active =
+                    !!highlightBox && b.code.toLowerCase() === highlightBox.toLowerCase();
+                  return (
+                    <tr
+                      key={b.id}
+                      id={active ? `box-${b.code}` : undefined}
+                      className={
+                        active
+                          ? "border-b border-teal-200 bg-teal-50"
+                          : "border-b border-slate-50"
+                      }
+                    >
+                      <td className="py-2 font-medium">
+                        <Link
+                          href={`/physical-archive/boxes/${b.id}`}
+                          className="text-blue-700 hover:underline"
+                        >
+                          {b.code}
+                        </Link>
+                      </td>
+                      <td className="py-2 text-slate-600">{b.location?.name ?? "—"}</td>
+                      <td className="py-2 text-slate-600">
+                        {b.currentCount}/{b.capacity}
+                      </td>
+                      <td className="py-2">
+                        <div className="flex flex-col gap-1">
+                          <Link
+                            href={`/physical-archive/boxes/${b.id}`}
+                            className="text-xs text-teal-700 hover:underline"
+                          >
+                            Ver ficha
+                          </Link>
+                          <a
+                            href={`/api/v1/boxes/${b.id}/label`}
+                            className="text-xs text-blue-700 hover:underline"
+                          >
+                            Etiqueta PDF + QR
+                          </a>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </CardContent>

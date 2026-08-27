@@ -5,7 +5,7 @@ import { jsonOk, jsonError, writeAudit, AppError } from "@/shared/kernel/http";
 import { createFolder, listFolders } from "@/modules/physical-archive";
 
 const createSchema = z.object({
-  code: z.string().min(1),
+  code: z.string().optional(),
   name: z.string().optional(),
   boxId: z.string().optional(),
   color: z.string().optional(),
@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
 
     const body = createSchema.parse(await req.json());
     const folder = await createFolder(user, {
-      code: body.code.toUpperCase(),
+      code: body.code?.trim() ? body.code.trim().toUpperCase() : undefined,
       name: body.name,
       boxId: body.boxId,
       color: body.color,

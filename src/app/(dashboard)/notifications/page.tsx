@@ -14,7 +14,7 @@ export default async function NotificationsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-slate-900">Notificaciones</h1>
+        <h1 className="page-title text-xl font-bold text-slate-900 sm:text-2xl">Notificaciones</h1>
         <p className="text-sm text-slate-500">
           Avisos en tiempo real · se actualizan automáticamente en la campana del header
         </p>

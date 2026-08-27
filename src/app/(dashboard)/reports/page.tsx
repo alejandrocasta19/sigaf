@@ -8,7 +8,7 @@ export default async function ReportsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-slate-900">Reportes</h1>
+        <h1 className="page-title text-xl font-bold text-slate-900 sm:text-2xl">Reportes</h1>
         <p className="text-sm text-slate-500">
           Exporta PDF, Excel o CSV e importa documentos masivamente
         </p>

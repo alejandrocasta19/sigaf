@@ -2,7 +2,8 @@ import bcrypt from "bcryptjs";
 import { prisma } from "@/shared/kernel/prisma";
 import type { SessionUser } from "@/shared/kernel/types";
 import { AppError } from "@/shared/kernel/http";
-import { USER_SECRET_OMIT } from "@/shared/kernel/user-privacy";
+import { USER_WITH_ROLE_DEP_SELECT } from "@/shared/kernel/user-privacy";
+import { assertPasswordPolicy } from "@/shared/kernel/password-policy";
 
 export const ADMIN_ROLES = ["SUPER_ADMIN", "SYSTEM_ADMIN", "DOC_ADMIN"] as const;
 
@@ -41,13 +42,25 @@ async function assertDependencyInOrg(organizationId: string, dependencyId: strin
   if (!dep) throw new AppError("Dependencia no válida para la organización", 400);
 }
 
-export async function listUsers(user: SessionUser) {
-  return prisma.user.findMany({
+export async function listUsers(
+  user: SessionUser,
+  opts?: { cursor?: string | null; take?: number }
+) {
+  const take = opts?.take ?? 50;
+  const items = await prisma.user.findMany({
     where: { organizationId: user.organizationId, deletedAt: null },
-    omit: USER_SECRET_OMIT,
-    include: { role: true, dependency: true },
-    orderBy: { createdAt: "desc" },
+    select: USER_WITH_ROLE_DEP_SELECT,
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    take: take + 1,
+    ...(opts?.cursor ? { cursor: { id: opts.cursor }, skip: 1 } : {}),
   });
+  const hasMore = items.length > take;
+  const page = hasMore ? items.slice(0, take) : items;
+  return {
+    items: page,
+    nextCursor: hasMore ? (page[page.length - 1]?.id ?? null) : null,
+    hasMore,
+  };
 }
 
 export async function createUser(
@@ -75,8 +88,7 @@ export async function createUser(
       roleId: data.roleId,
       dependencyId: data.dependencyId ?? null,
     },
-    omit: USER_SECRET_OMIT,
-    include: { role: true, dependency: true },
+    select: USER_WITH_ROLE_DEP_SELECT,
   });
 }
 
@@ -91,12 +103,59 @@ export async function createDependency(
   user: SessionUser,
   data: { code: string; name: string; description?: string }
 ) {
+  if (!isAdminRole(user)) throw new AppError("Sin permiso para crear dependencias", 403);
+
+  const code = data.code.trim().toUpperCase();
+  const name = data.name.trim();
+  if (!/^[A-Z0-9]{1,12}$/.test(code)) {
+    throw new AppError("El código debe ser alfanumérico (1-12 caracteres, p. ej. 40 o JUR)", 400);
+  }
+  if (name.length < 3) throw new AppError("Indique el nombre de la dependencia", 400);
+
+  const existing = await prisma.dependency.findFirst({
+    where: { organizationId: user.organizationId, code },
+  });
+  if (existing && !existing.deletedAt) {
+    throw new AppError(`Ya existe una dependencia con el código ${code}`, 409);
+  }
+  if (existing?.deletedAt) {
+    return prisma.dependency.update({
+      where: { id: existing.id },
+      data: {
+        name,
+        description: data.description?.trim() || existing.description,
+        active: true,
+        deletedAt: null,
+      },
+    });
+  }
+
   return prisma.dependency.create({
     data: {
       organizationId: user.organizationId,
-      code: data.code.toUpperCase(),
-      name: data.name,
-      description: data.description,
+      code,
+      name,
+      description: data.description?.trim() || null,
+    },
+  });
+}
+
+export async function updateDependency(
+  user: SessionUser,
+  id: string,
+  data: { name?: string; description?: string | null; active?: boolean }
+) {
+  if (!isAdminRole(user)) throw new AppError("Sin permiso para editar dependencias", 403);
+  const dep = await prisma.dependency.findFirst({
+    where: { id, organizationId: user.organizationId, deletedAt: null },
+  });
+  if (!dep) throw new AppError("Dependencia no encontrada", 404);
+  return prisma.dependency.update({
+    where: { id },
+    data: {
+      ...(data.name != null ? { name: data.name.trim() } : {}),
+      ...(data.description !== undefined ? { description: data.description } : {}),
+      ...(data.active !== undefined ? { active: data.active } : {}),
     },
   });
 }
@@ -193,8 +252,7 @@ export async function updateUserRole(
       roleId,
       ...(dependencyId !== undefined ? { dependencyId } : {}),
     },
-    omit: USER_SECRET_OMIT,
-    include: { role: true, dependency: true },
+    select: USER_WITH_ROLE_DEP_SELECT,
   });
 }
 
@@ -219,8 +277,7 @@ export async function setUserStatus(
   const updated = await prisma.user.update({
     where: { id: userId },
     data: { status },
-    omit: USER_SECRET_OMIT,
-    include: { role: true, dependency: true },
+    select: USER_WITH_ROLE_DEP_SELECT,
   });
 
   if (status === "BLOCKED" || status === "INACTIVE") {
@@ -296,6 +353,39 @@ export async function resetUserPassword(
   ]);
 
   return { userId, temporaryPassword: password };
+}
+
+export async function changeOwnPassword(
+  user: SessionUser,
+  data: { currentPassword: string; newPassword: string }
+) {
+  const dbUser = await prisma.user.findFirst({
+    where: { id: user.id, deletedAt: null },
+    select: { id: true, passwordHash: true },
+  });
+  if (!dbUser) throw new AppError("Usuario no encontrado", 404);
+
+  const valid = await bcrypt.compare(data.currentPassword, dbUser.passwordHash);
+  if (!valid) throw new AppError("La contraseña actual no es correcta", 400);
+
+  assertPasswordPolicy(data.newPassword);
+
+  const passwordHash = await bcrypt.hash(data.newPassword, 12);
+
+  await prisma.$transaction([
+    prisma.user.update({
+      where: { id: user.id },
+      data: { passwordHash },
+    }),
+    prisma.session.updateMany({
+      where: {
+        userId: user.id,
+        revokedAt: null,
+        ...(user.sessionId ? { NOT: { id: user.sessionId } } : {}),
+      },
+      data: { revokedAt: new Date() },
+    }),
+  ]);
 }
 
 export async function listOrganizations(user: SessionUser) {

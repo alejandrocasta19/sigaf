@@ -17,6 +17,8 @@ export type SessionUser = {
   avatarUrl: string | null;
   /** Id de fila Session en BD — permite revocar JWT */
   sessionId?: string;
+  /** Incluido en JWT para políticas de middleware (MFA admin en prod) */
+  mfaEnabled?: boolean;
 };
 
 export const ROLE_THEME: Record<

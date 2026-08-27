@@ -1,6 +1,7 @@
 import { ArchivalPhase, TransferKind, TransferStatus } from "@prisma/client";
 import { prisma } from "@/shared/kernel/prisma";
 import type { SessionUser } from "@/shared/kernel/types";
+import { validateExpedientesForPrimaryTransfer } from "@/modules/expedientes";
 
 /** Metadatos del ciclo vital — Ley 594/2000 art. 23 y lineamientos AGN */
 export const ARCHIVAL_PHASES = {
@@ -151,10 +152,52 @@ export async function createPhaseTransfer(
     checklistChronological?: boolean;
     checklistInventory?: boolean;
     checklistBoxFolder?: boolean;
+    checklistRetentionMet?: boolean;
+    checklistApproval?: boolean;
   }
 ) {
   if (user.roleCode === "CONSULT_USER") {
     throw new Error("Sin permiso para transferencias");
+  }
+
+  const expedienteIds = data.expedienteIds ?? [];
+  const docIds = data.documentIds ?? [];
+
+  if (expedienteIds.length === 0 && docIds.length === 0) {
+    throw new Error("Seleccione al menos un expediente o documento");
+  }
+
+  if (data.kind === "PRIMARY" && expedienteIds.length) {
+    await validateExpedientesForPrimaryTransfer(user, expedienteIds);
+  }
+
+  if (docIds.length) {
+    const docs = await prisma.document.findMany({
+      where: { id: { in: docIds }, organizationId: user.organizationId },
+      include: { folder: { include: { box: true } } },
+    });
+    for (const d of docs) {
+      if (!d.foliationVerified) {
+        throw new Error(`Documento ${d.code}: foliación no verificada`);
+      }
+      if (!d.expedienteId && !d.folder?.boxId) {
+        throw new Error(`Documento ${d.code}: sin expediente ni caja/carpeta asignada`);
+      }
+    }
+  }
+
+  if (expedienteIds.length) {
+    const exps = await prisma.expediente.findMany({
+      where: { id: { in: expedienteIds }, organizationId: user.organizationId },
+    });
+    for (const e of exps) {
+      if (!e.foliationVerified) {
+        throw new Error(`Expediente ${e.code}: foliación no verificada`);
+      }
+      if (!e.folderNumber || !e.boxCode) {
+        throw new Error(`Expediente ${e.code}: carpeta/caja sin numerar`);
+      }
+    }
   }
 
   const checklistOk =
@@ -163,26 +206,10 @@ export async function createPhaseTransfer(
     !!data.checklistInventory &&
     !!data.checklistBoxFolder;
 
-  if (!checklistOk) {
+  if (!checklistOk && data.kind === "PRIMARY") {
     throw new Error(
       "Checklist incompleto: foliación, orden cronológico, inventario y caja/carpeta son obligatorios"
     );
-  }
-
-  const docIds = data.documentIds ?? [];
-  if (docIds.length) {
-    const docs = await prisma.document.findMany({
-      where: { id: { in: docIds }, organizationId: user.organizationId },
-      include: { folder: { include: { box: true } } },
-    });
-    for (const d of docs) {
-      if (!d.foliationVerified && !data.checklistFoliation) {
-        throw new Error(`Documento ${d.code}: foliación no verificada`);
-      }
-      if (!d.folder?.boxId && !data.checklistBoxFolder) {
-        throw new Error(`Documento ${d.code}: sin caja/carpeta asignada`);
-      }
-    }
   }
 
   const year = new Date().getFullYear();
@@ -192,13 +219,9 @@ export async function createPhaseTransfer(
   const code = `TRF-${year}-${String(count + 1).padStart(4, "0")}`;
 
   const items = [
-    ...(data.documentIds ?? []).map((documentId) => ({ documentId })),
-    ...(data.expedienteIds ?? []).map((expedienteId) => ({ expedienteId })),
+    ...docIds.map((documentId) => ({ documentId })),
+    ...expedienteIds.map((expedienteId) => ({ expedienteId })),
   ];
-
-  if (items.length === 0) {
-    throw new Error("Seleccione al menos un documento o expediente");
-  }
 
   return prisma.transfer.create({
     data: {
@@ -214,6 +237,8 @@ export async function createPhaseTransfer(
       checklistChronological: true,
       checklistInventory: true,
       checklistBoxFolder: true,
+      checklistRetentionMet: data.checklistRetentionMet ?? false,
+      checklistApproval: data.checklistApproval ?? false,
       items: { create: items },
     },
     include: { items: true, _count: { select: { items: true } } },
@@ -240,6 +265,10 @@ export async function completePhaseTransfer(user: SessionUser, transferId: strin
     !transfer.checklistBoxFolder
   ) {
     throw new Error("No se puede completar: checklist de transferencia incompleto");
+  }
+
+  if (transfer.kind === "PRIMARY" && !transfer.checklistApproval) {
+    throw new Error("Transferencia primaria requiere aprobación del Archivo Central");
   }
 
   const toPhase = transfer.toPhase;

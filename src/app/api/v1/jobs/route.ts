@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { z } from "zod";
 import { getSession, requirePermission } from "@/shared/kernel/auth";
 import { AppError, jsonError, jsonOk, writeAudit } from "@/shared/kernel/http";
-import { enqueueAndRunJob, JOB_TYPES, listJobs, ensureJobHandlers } from "@/jobs";
+import { enqueueJob, JOB_TYPES, listJobs, ensureJobHandlers } from "@/jobs";
 
 ensureJobHandlers();
 
@@ -23,6 +23,8 @@ const schema = z.object({
     JOB_TYPES.RETENTION_SCAN,
     JOB_TYPES.DISPOSAL_NOTIFY,
     JOB_TYPES.LOANS_OVERDUE,
+    JOB_TYPES.REPORT_EXPORT,
+    JOB_TYPES.DOCUMENT_IMPORT,
   ]),
   payload: z.unknown().optional(),
 });
@@ -36,17 +38,17 @@ export async function POST(req: NextRequest) {
     if (body.type === JOB_TYPES.BACKUP) requirePermission(user, "backups.create");
     else requirePermission(user, "jobs.create");
 
-    const job = await enqueueAndRunJob(user, body.type, body.payload ?? {});
+    const job = await enqueueJob(user, body.type, body.payload ?? {});
     await writeAudit({
       user,
-      action: "JOB_RUN",
+      action: "JOB_ENQUEUE",
       module: "jobs",
       entityType: "Job",
       entityId: job.id,
       changes: { type: body.type, status: job.status },
       req,
     });
-    return jsonOk(job, 201);
+    return jsonOk(job, 202);
   } catch (e) {
     return jsonError(e);
   }

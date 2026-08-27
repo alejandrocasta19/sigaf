@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { z } from "zod";
+import { DocumentSupport } from "@prisma/client";
 import { getSession, requirePermission, requireAnyPermission } from "@/shared/kernel/auth";
 import { jsonOk, jsonError, writeAudit, AppError } from "@/shared/kernel/http";
 import {
@@ -17,12 +18,17 @@ const submitSchema = z.object({
   name: z.string().min(1),
   description: z.string().optional(),
   dependencyId: z.string().min(1),
+  expedienteId: z.string().optional(),
   documentTypeId: z.string().optional(),
   seriesId: z.string().optional(),
   subseriesId: z.string().optional(),
   folioCount: z.number().int().min(1).optional(),
   observations: z.string().optional(),
   responsibleId: z.string().optional(),
+  documentDate: z.string().optional(),
+  support: z.nativeEnum(DocumentSupport).optional(),
+  electronicFormat: z.string().optional(),
+  fileName: z.string().optional(),
 });
 
 const actionSchema = z.object({

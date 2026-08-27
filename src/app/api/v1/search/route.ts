@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { getSession } from "@/shared/kernel/auth";
+import { getSession, requirePermission } from "@/shared/kernel/auth";
 import { jsonOk, jsonError, AppError } from "@/shared/kernel/http";
 import { searchDocuments } from "@/modules/documents";
 import { prisma } from "@/shared/kernel/prisma";
@@ -9,6 +9,7 @@ export async function GET(req: NextRequest) {
   try {
     const user = await getSession();
     if (!user) throw new AppError("No autenticado", 401);
+    requirePermission(user, "documents.read");
 
     const q = req.nextUrl.searchParams.get("q")?.trim();
     if (!q || q.length < 2) throw new AppError("Consulta de búsqueda inválida", 400);

@@ -2,7 +2,7 @@
  * Auditoría interna de seguridad (sustituto parcial de pentest).
  * No reemplaza una auditoría externa contratada.
  *
- * Uso: npx tsx scripts/security-audit.ts
+ * Uso: npm run test:security
  * Requiere servidor en APP_URL (default http://localhost:3000)
  */
 const BASE = process.env.APP_URL || "http://localhost:3000";
@@ -12,7 +12,7 @@ type Row = { name: string; ok: boolean; detail: string };
 const rows: Row[] = [];
 
 function record(name: string, ok: boolean, detail: string) {
-  rows.push({ name, ok, detail });
+  rows.push({ name, detail, ok });
   console.log(`${ok ? "PASS" : "FAIL"} | ${name} | ${detail}`);
 }
 
@@ -27,6 +27,21 @@ function cookieFrom(res: Response) {
   return m ? m[0] : null;
 }
 
+function csrfFrom(res: Response) {
+  const anyHeaders = res.headers as Headers & { getSetCookie?: () => string[] };
+  if (typeof anyHeaders.getSetCookie === "function") {
+    const csrf = anyHeaders.getSetCookie().find((c) => c.startsWith("sigaf_csrf="));
+    if (csrf) return csrf.split(";")[0].split("=")[1];
+  }
+  const raw = res.headers.get("set-cookie");
+  const m = raw?.match(/sigaf_csrf=([^;]+)/);
+  return m ? decodeURIComponent(m[1]) : null;
+}
+
+function mergeCookies(...parts: (string | null)[]) {
+  return parts.filter(Boolean).join("; ");
+}
+
 async function login(email: string) {
   const res = await fetch(`${BASE}/api/auth/login`, {
     method: "POST",
@@ -34,7 +49,7 @@ async function login(email: string) {
     body: JSON.stringify({ email, password: PASS }),
   });
   const json = await res.json();
-  return { res, json, cookie: cookieFrom(res) };
+  return { res, json, cookie: cookieFrom(res), csrf: csrfFrom(res) };
 }
 
 async function main() {
@@ -42,6 +57,13 @@ async function main() {
 
   const health = await fetch(`${BASE}/api/health`);
   record("HEALTH", health.status === 200, String(health.status));
+
+  const loginPage = await fetch(`${BASE}/login`);
+  record(
+    "CSRF cookie en /login",
+    Boolean(csrfFrom(loginPage)),
+    csrfFrom(loginPage) ? "presente" : "ausente"
+  );
 
   const bad = await fetch(`${BASE}/api/auth/login`, {
     method: "POST",
@@ -86,11 +108,13 @@ async function main() {
     );
   }
 
-  const weak = await login("super@sigaf.local");
-  if (weak.cookie) {
+  const superLogin = await login("super@sigaf.local");
+  record("LOGIN super", !!superLogin.cookie, superLogin.json?.data?.user?.roleCode || "fail");
+
+  if (superLogin.cookie) {
     const weakPass = await fetch(`${BASE}/api/v1/users`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Cookie: weak.cookie },
+      headers: { "Content-Type": "application/json", Cookie: superLogin.cookie },
       body: JSON.stringify({
         email: `weak.${Date.now()}@sigaf.local`,
         password: "123456",
@@ -104,6 +128,38 @@ async function main() {
       weakPass.status === 400 || weakPass.status === 403,
       String(weakPass.status)
     );
+
+    const noCsrf = await fetch(`${BASE}/api/v1/jobs`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: superLogin.cookie,
+        Origin: "https://evil.example",
+      },
+      body: JSON.stringify({ type: "system.backup" }),
+    });
+    record(
+      "NEG mutación sin CSRF / origen malo",
+      noCsrf.status === 403,
+      String(noCsrf.status)
+    );
+
+    if (superLogin.csrf) {
+      const withCsrf = await fetch(`${BASE}/api/v1/notifications`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Cookie: mergeCookies(superLogin.cookie, `sigaf_csrf=${superLogin.csrf}`),
+          "X-CSRF-Token": superLogin.csrf,
+        },
+        body: JSON.stringify({ markAllRead: true }),
+      });
+      record(
+        "Mutación con CSRF válido (notificaciones)",
+        withCsrf.status === 200 || withCsrf.status === 403,
+        String(withCsrf.status)
+      );
+    }
   }
 
   const headers = await fetch(`${BASE}/login`);
@@ -116,6 +172,11 @@ async function main() {
     "Header X-Content-Type-Options",
     headers.headers.get("x-content-type-options") === "nosniff",
     headers.headers.get("x-content-type-options") || "missing"
+  );
+  record(
+    "Header Content-Security-Policy",
+    Boolean(headers.headers.get("content-security-policy")),
+    headers.headers.get("content-security-policy")?.slice(0, 40) || "missing"
   );
 
   const passed = rows.filter((r) => r.ok).length;

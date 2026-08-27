@@ -5,9 +5,9 @@ import { jsonOk, jsonError, writeAudit, AppError } from "@/shared/kernel/http";
 import { createBox, listBoxes } from "@/modules/physical-archive";
 
 const createSchema = z.object({
-  code: z.string().min(1),
+  code: z.string().optional(),
   locationId: z.string().optional(),
-  capacity: z.number().int().min(1).default(50),
+  capacity: z.number().int().min(1).default(20),
 });
 
 export async function GET() {
@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
 
     const body = createSchema.parse(await req.json());
     const box = await createBox(user, {
-      code: body.code.toUpperCase(),
+      code: body.code?.trim() ? body.code.trim().toUpperCase() : undefined,
       locationId: body.locationId,
       capacity: body.capacity,
     });

@@ -3,13 +3,10 @@ services:
     image: postgres:16-alpine
     container_name: sigaf-postgres
     restart: unless-stopped
-    # En producción NO publicar 5432 al host; solo red interna:
-    # ports: []
     ports:
       - "${POSTGRES_PUBLISH_PORT:-127.0.0.1:5432}:5432"
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-sigaf}
-      # En producción: export POSTGRES_PASSWORD="$(openssl rand -base64 24)"
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-sigaf_secret}
       POSTGRES_DB: ${POSTGRES_DB:-sigaf}
     volumes:
@@ -27,6 +24,74 @@ services:
       - log_connections=on
       - -c
       - log_disconnections=on
+      - -c
+      - max_connections=100
+
+  redis:
+    image: redis:7-alpine
+    container_name: sigaf-redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PUBLISH_PORT:-127.0.0.1:6379}:6379"
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - sigaf_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  minio:
+    image: minio/minio:latest
+    container_name: sigaf-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-sigafminio}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-sigafminio_change_me}
+    ports:
+      - "${MINIO_API_PORT:-127.0.0.1:9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-127.0.0.1:9001}:9001"
+    volumes:
+      - sigaf_minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  minio-init:
+    image: minio/mc:latest
+    container_name: sigaf-minio-init
+    depends_on:
+      minio:
+        condition: service_started
+    restart: on-failure
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        sleep 3
+        mc alias set local http://minio:9000 $${MINIO_ROOT_USER:-sigafminio} $${MINIO_ROOT_PASSWORD:-sigafminio_change_me}
+        mc mb -p local/$${S3_BUCKET:-sigaf-docs} || true
+        cat > /tmp/cors.json << 'EOF'
+        {
+          "CORSRules": [{
+            "AllowedOrigins": ["*"],
+            "AllowedMethods": ["GET", "PUT", "HEAD"],
+            "AllowedHeaders": ["*"],
+            "ExposeHeaders": ["ETag", "Content-Length"],
+            "MaxAgeSeconds": 3600
+          }]
+        }
+        EOF
+        mc cors set /tmp/cors.json local/$${S3_BUCKET:-sigaf-docs} || mc anonymous set none local/$${S3_BUCKET:-sigaf-docs}
+        exit 0
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-sigafminio}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-sigafminio_change_me}
+      S3_BUCKET: ${S3_BUCKET:-sigaf-docs}
 
   app:
     build: .
@@ -35,7 +100,7 @@ services:
     ports:
       - "${APP_PUBLISH_PORT:-3000}:3000"
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-sigaf}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-sigaf}?schema=public
+      DATABASE_URL: postgresql://${POSTGRES_USER:-sigaf}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-sigaf}?schema=public&connection_limit=10&pool_timeout=20
       JWT_SECRET: ${JWT_SECRET:-change-me-to-a-long-random-secret-min-32-chars}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-8h}
       CSRF_SECRET: ${CSRF_SECRET:-change-me-csrf-secret}
@@ -46,12 +111,56 @@ services:
       ALLOW_HTTP: ${ALLOW_HTTP:-true}
       API_RATE_MAX: ${API_RATE_MAX:-120}
       LOGIN_RATE_MAX: ${LOGIN_RATE_MAX:-20}
+      REDIS_URL: redis://redis:6379
+      STORAGE_DRIVER: ${STORAGE_DRIVER:-s3}
+      S3_ENDPOINT: http://minio:9000
+      S3_PUBLIC_URL: ${S3_PUBLIC_URL:-http://127.0.0.1:9000}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_BUCKET: ${S3_BUCKET:-sigaf-docs}
+      S3_ACCESS_KEY: ${MINIO_ROOT_USER:-sigafminio}
+      S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-sigafminio_change_me}
+      S3_FORCE_PATH_STYLE: "true"
     volumes:
       - sigaf_uploads:/app/uploads
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_started
+
+  worker:
+    build: .
+    container_name: sigaf-worker
+    restart: unless-stopped
+    command: ["npx", "tsx", "src/jobs/worker.ts"]
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-sigaf}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-sigaf}?schema=public&connection_limit=5&pool_timeout=20
+      REDIS_URL: redis://redis:6379
+      UPLOAD_DIR: /app/uploads
+      NODE_ENV: production
+      STORAGE_DRIVER: ${STORAGE_DRIVER:-s3}
+      S3_ENDPOINT: http://minio:9000
+      S3_PUBLIC_URL: ${S3_PUBLIC_URL:-http://127.0.0.1:9000}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_BUCKET: ${S3_BUCKET:-sigaf-docs}
+      S3_ACCESS_KEY: ${MINIO_ROOT_USER:-sigafminio}
+      S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-sigafminio_change_me}
+      S3_FORCE_PATH_STYLE: "true"
+      CLAMAV_ENABLED: ${CLAMAV_ENABLED:-false}
+    volumes:
+      - sigaf_uploads:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_started
 
 volumes:
   sigaf_pg_data:
   sigaf_uploads:
+  sigaf_redis_data:
+  sigaf_minio_data:

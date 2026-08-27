@@ -36,7 +36,7 @@ export default async function HelpFaqPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-slate-900">Preguntas frecuentes</h1>
+        <h1 className="page-title text-xl font-bold text-slate-900 sm:text-2xl">Preguntas frecuentes</h1>
         <p className="text-sm text-slate-500">Respuestas a consultas comunes sobre SIGAF</p>
       </div>
 

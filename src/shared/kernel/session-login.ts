@@ -1,8 +1,9 @@
 import bcrypt from "bcryptjs";
 import { prisma } from "@/shared/kernel/prisma";
 import { signToken } from "@/shared/kernel/auth";
-import { AUTH_COOKIE } from "@/shared/kernel/types";
+import { AUTH_COOKIE, CSRF_COOKIE } from "@/shared/kernel/types";
 import { jsonOk, writeAudit, AppError } from "@/shared/kernel/http";
+import { generateCsrfToken, csrfCookieOptions } from "@/shared/kernel/csrf";
 
 export const MFA_COOKIE = "sigaf_mfa_challenge";
 
@@ -45,6 +46,7 @@ export async function createSessionResponse(userId: string, ip: string, ua?: str
     permissions: user.role.permissions.map((p) => p.permission.code),
     avatarUrl: user.avatarUrl,
     sessionId: session.id,
+    mfaEnabled: user.mfaEnabled,
   };
 
   const token = await signToken(sessionUser);
@@ -73,6 +75,56 @@ export async function createSessionResponse(userId: string, ip: string, ua?: str
     path: "/",
     maxAge: 60 * 60 * 8,
   });
+  res.cookies.set(CSRF_COOKIE, generateCsrfToken(), csrfCookieOptions());
   res.cookies.set(MFA_COOKIE, "", { httpOnly: true, path: "/", maxAge: 0 });
+  return res;
+}
+
+/** Re-emite JWT tras cambios de perfil (p.ej. activar MFA) sin nueva sesión. */
+export async function refreshSessionCookie(user: {
+  id: string;
+  sessionId?: string;
+  mfaEnabled?: boolean;
+}) {
+  if (!user.sessionId) return null;
+
+  const dbUser = await prisma.user.findFirst({
+    where: { id: user.id, deletedAt: null, status: "ACTIVE" },
+    include: {
+      role: { include: { permissions: { include: { permission: true } } } },
+      organization: true,
+      dependency: true,
+    },
+  });
+  if (!dbUser) return null;
+
+  const sessionUser = {
+    id: dbUser.id,
+    email: dbUser.email,
+    firstName: dbUser.firstName,
+    lastName: dbUser.lastName,
+    fullName: `${dbUser.firstName} ${dbUser.lastName}`,
+    roleCode: dbUser.role.code,
+    roleName: dbUser.role.name,
+    accessLevel: dbUser.role.accessLevel,
+    organizationId: dbUser.organizationId,
+    organizationName: dbUser.organization.name,
+    dependencyId: dbUser.dependencyId,
+    dependencyName: dbUser.dependency?.name ?? null,
+    permissions: dbUser.role.permissions.map((p) => p.permission.code),
+    avatarUrl: dbUser.avatarUrl,
+    sessionId: user.sessionId,
+    mfaEnabled: dbUser.mfaEnabled,
+  };
+
+  const token = await signToken(sessionUser);
+  const res = jsonOk({ refreshed: true });
+  res.cookies.set(AUTH_COOKIE, token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    maxAge: 60 * 60 * 8,
+  });
   return res;
 }

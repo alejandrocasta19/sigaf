@@ -9,6 +9,7 @@ import {
   getLifecycleStats,
   listByPhase,
 } from "@/modules/loans-transfers";
+import { listExpedientesReadiness } from "@/modules/expedientes";
 
 export async function GET(req: NextRequest) {
   try {
@@ -17,6 +18,15 @@ export async function GET(req: NextRequest) {
     requirePermission(user, "transfers.read");
 
     const phase = req.nextUrl.searchParams.get("phase") as ArchivalPhase | null;
+    const view = req.nextUrl.searchParams.get("view");
+    if (view === "ready") {
+      const readiness = await listExpedientesReadiness(user);
+      return jsonOk({
+        all: readiness,
+        ready: readiness.filter((r) => r.ready),
+        pending: readiness.filter((r) => !r.ready),
+      });
+    }
     if (phase && ["MANAGEMENT", "CENTRAL", "HISTORICAL"].includes(phase)) {
       return jsonOk(await listByPhase(user, phase));
     }
@@ -39,6 +49,8 @@ const createSchema = z.object({
   checklistChronological: z.boolean().optional(),
   checklistInventory: z.boolean().optional(),
   checklistBoxFolder: z.boolean().optional(),
+  checklistRetentionMet: z.boolean().optional(),
+  checklistApproval: z.boolean().optional(),
 });
 
 export async function POST(req: NextRequest) {

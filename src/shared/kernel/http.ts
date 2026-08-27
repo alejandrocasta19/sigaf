@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { headers } from "next/headers";
 import { prisma } from "./prisma";
 import type { SessionUser } from "./types";
 
@@ -16,11 +17,17 @@ export function jsonOk<T>(data: T, status = 200) {
   return NextResponse.json({ success: true, data }, { status });
 }
 
-export function jsonError(error: unknown, fallback = "Error interno") {
+export async function jsonError(error: unknown, fallback = "Error interno") {
+  let requestId = crypto.randomUUID();
+  try {
+    requestId = (await headers()).get("x-request-id") || requestId;
+  } catch {
+    /* fuera de un request */
+  }
   if (error instanceof AppError) {
     return NextResponse.json(
-      { success: false, error: error.message, code: error.code },
-      { status: error.status }
+      { success: false, error: error.message, code: error.code, requestId },
+      { status: error.status, headers: { "x-request-id": requestId } }
     );
   }
   if (
@@ -32,12 +39,15 @@ export function jsonError(error: unknown, fallback = "Error interno") {
     const issues = (error as { issues?: { message?: string }[] }).issues;
     const message = issues?.[0]?.message || "Datos inválidos";
     return NextResponse.json(
-      { success: false, error: message, code: "VALIDATION_ERROR" },
-      { status: 400 }
+      { success: false, error: message, code: "VALIDATION_ERROR", requestId },
+      { status: 400, headers: { "x-request-id": requestId } }
     );
   }
   console.error(error);
-  return NextResponse.json({ success: false, error: fallback }, { status: 500 });
+  return NextResponse.json(
+    { success: false, error: fallback, requestId },
+    { status: 500, headers: { "x-request-id": requestId } }
+  );
 }
 
 export async function writeAudit(params: {
@@ -51,24 +61,6 @@ export async function writeAudit(params: {
   req?: Request | null;
 }) {
   try {
-    let organizationId: string | undefined;
-    if (params.user?.organizationId) {
-      const org = await prisma.organization.findUnique({
-        where: { id: params.user.organizationId },
-        select: { id: true },
-      });
-      organizationId = org?.id;
-    }
-
-    let userId: string | undefined;
-    if (params.user?.id) {
-      const u = await prisma.user.findUnique({
-        where: { id: params.user.id },
-        select: { id: true },
-      });
-      userId = u?.id;
-    }
-
     const ip =
       params.ipAddress ??
       (params.req
@@ -78,8 +70,8 @@ export async function writeAudit(params: {
 
     await prisma.auditLog.create({
       data: {
-        organizationId,
-        userId,
+        organizationId: params.user?.organizationId,
+        userId: params.user?.id,
         action: params.action,
         module: params.module,
         entityType: params.entityType,

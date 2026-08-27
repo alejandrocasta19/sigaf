@@ -9,6 +9,7 @@ const patchSchema = z.object({
   name: z.string().min(1).optional(),
   description: z.string().optional(),
   status: z.nativeEnum(DocumentStatus).optional(),
+  version: z.number().int().optional(),
 });
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -37,7 +38,8 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
 
     const { id } = await ctx.params;
     const body = patchSchema.parse(await req.json());
-    const exp = await updateExpediente(user, id, body);
+    const { version, ...fields } = body;
+    const exp = await updateExpediente(user, id, fields, version);
     if (!exp) throw new AppError("Expediente no encontrado", 404);
 
     await writeAudit({

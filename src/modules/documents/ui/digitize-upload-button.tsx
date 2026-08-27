@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Upload } from "lucide-react";
 import { Button } from "@/shared/ui/button";
+import { directUpload } from "@/shared/ui/direct-upload";
 
 export function DigitizeUploadButton({ documentId }: { documentId: string }) {
   const router = useRouter();
@@ -15,14 +16,7 @@ export function DigitizeUploadButton({ documentId }: { documentId: string }) {
     if (!file) return;
     setBusy(true);
     try {
-      const fd = new FormData();
-      fd.append("file", file);
-      const res = await fetch(`/api/v1/documents/${documentId}/digitize`, {
-        method: "POST",
-        body: fd,
-      });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Error");
+      await directUpload(file, { purpose: "digitize", targetId: documentId });
       toast.success("Documento digitalizado (texto PDF indexado si aplica)");
       router.refresh();
     } catch (e) {

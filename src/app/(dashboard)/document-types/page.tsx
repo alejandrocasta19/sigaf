@@ -17,7 +17,7 @@ export default async function DocumentTypesPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-slate-900">Tipos documentales</h1>
+        <h1 className="page-title text-xl font-bold text-slate-900 sm:text-2xl">Tipos documentales</h1>
         <p className="text-sm text-slate-500">Clasificación de documentos del archivo</p>
       </div>
 

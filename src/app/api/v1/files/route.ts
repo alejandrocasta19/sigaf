@@ -3,26 +3,7 @@ import path from "path";
 import { getSession, requirePermission } from "@/shared/kernel/auth";
 import { AppError, jsonError } from "@/shared/kernel/http";
 import { prisma } from "@/shared/kernel/prisma";
-import { readUpload } from "@/shared/kernel/storage";
-
-function guessMime(filePath: string, fallback?: string | null) {
-  if (fallback) return fallback;
-  const ext = path.extname(filePath).toLowerCase();
-  const map: Record<string, string> = {
-    ".pdf": "application/pdf",
-    ".png": "image/png",
-    ".jpg": "image/jpeg",
-    ".jpeg": "image/jpeg",
-    ".gif": "image/gif",
-    ".webp": "image/webp",
-    ".txt": "text/plain",
-    ".doc": "application/msword",
-    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    ".xls": "application/vnd.ms-excel",
-    ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  };
-  return map[ext] ?? "application/octet-stream";
-}
+import { getSignedGetUrl } from "@/shared/kernel/storage";
 
 function canAccessDoc(
   user: { roleCode: string; organizationId: string; dependencyId: string | null },
@@ -41,7 +22,7 @@ function canAccessDoc(
   return false;
 }
 
-/** GET /api/v1/files?type=version|attachment|document&id=xxx&disposition=inline|attachment */
+/** GET /api/v1/files?type=version|attachment|document|job&id=xxx&disposition=inline|attachment */
 export async function GET(req: NextRequest) {
   try {
     const user = await getSession();
@@ -55,7 +36,7 @@ export async function GET(req: NextRequest) {
 
     let filePath: string | null = null;
     let downloadName = "archivo";
-    let mimeType: string | null = null;
+    const inline = dispositionParam === "inline";
 
     if (type === "version") {
       const version = await prisma.documentVersion.findUnique({
@@ -77,7 +58,6 @@ export async function GET(req: NextRequest) {
       }
       filePath = att.filePath;
       downloadName = att.name;
-      mimeType = att.mimeType;
     } else if (type === "document") {
       const doc = await prisma.document.findFirst({
         where: { id, deletedAt: null },
@@ -87,23 +67,27 @@ export async function GET(req: NextRequest) {
       }
       filePath = doc.filePath;
       downloadName = `${doc.code}${path.extname(doc.filePath)}`;
+    } else if (type === "job") {
+      requirePermission(user, "reports.export");
+      const job = await prisma.job.findFirst({
+        where: { id, organizationId: user.organizationId },
+      });
+      const result = job?.result as { storageKey?: string; filename?: string } | null;
+      if (!job || job.status !== "COMPLETED" || !result?.storageKey) {
+        throw new AppError("Reporte no disponible", 404);
+      }
+      filePath = result.storageKey;
+      downloadName = result.filename || "reporte";
     } else {
       throw new AppError("Tipo inválido", 400);
     }
 
-    const buffer = await readUpload(filePath);
-    const contentType = guessMime(filePath, mimeType);
-    const inline =
-      dispositionParam === "inline" &&
-      (contentType === "application/pdf" || contentType.startsWith("image/"));
-
-    return new NextResponse(new Uint8Array(buffer), {
-      headers: {
-        "Content-Type": contentType,
-        "Content-Disposition": `${inline ? "inline" : "attachment"}; filename="${encodeURIComponent(downloadName)}"`,
-        "Cache-Control": "private, max-age=60",
-      },
+    const url = await getSignedGetUrl({
+      storageKey: filePath,
+      downloadName,
+      inline,
     });
+    return NextResponse.redirect(url, 302);
   } catch (e) {
     return jsonError(e);
   }

@@ -12,6 +12,14 @@ export async function register() {
     errors.push("JWT_SECRET parece un valor de ejemplo; genere uno fuerte");
   }
 
+  const csrf = process.env.CSRF_SECRET || "";
+  if (csrf.length < 24) {
+    errors.push("CSRF_SECRET debe tener al menos 24 caracteres en producción");
+  }
+  if (/change-me|csrf/i.test(csrf) && csrf.length < 32) {
+    errors.push("CSRF_SECRET parece un valor de ejemplo; genere uno fuerte");
+  }
+
   const db = process.env.DATABASE_URL || "";
   if (!db) errors.push("DATABASE_URL es obligatorio");
   if (/sigaf_secret|postgres:postgres/i.test(db)) {
@@ -21,6 +29,10 @@ export async function register() {
   const appUrl = process.env.APP_URL || "";
   if (appUrl && appUrl.startsWith("http://") && process.env.ALLOW_HTTP !== "true") {
     errors.push("APP_URL debe ser https:// en producción (o ALLOW_HTTP=true solo en LAN)");
+  }
+
+  if (process.env.ALLOW_HTTP === "true") {
+    console.warn("[SIGAF] ALLOW_HTTP=true — no usar en internet público");
   }
 
   if (errors.length) {

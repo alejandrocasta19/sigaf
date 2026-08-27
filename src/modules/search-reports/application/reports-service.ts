@@ -23,7 +23,7 @@ export async function fetchReportRows(user: SessionUser, type: ReportType) {
         where: documentScope(user),
         include: { dependency: true, series: true },
         orderBy: { createdAt: "desc" },
-        take: 5000,
+        take: 2000,
       });
       return {
         title: "Inventario de documentos",
@@ -44,7 +44,7 @@ export async function fetchReportRows(user: SessionUser, type: ReportType) {
         where: { organizationId: orgId, deletedAt: null, ...dep },
         include: { dependency: true },
         orderBy: { createdAt: "desc" },
-        take: 5000,
+        take: 2000,
       });
       return {
         title: "Expedientes activos",
@@ -69,7 +69,7 @@ export async function fetchReportRows(user: SessionUser, type: ReportType) {
         },
         include: { document: true, requester: true },
         orderBy: { dueDate: "asc" },
-        take: 5000,
+        take: 2000,
       });
       return {
         title: "Préstamos pendientes",
@@ -90,7 +90,7 @@ export async function fetchReportRows(user: SessionUser, type: ReportType) {
         where: { organizationId: orgId, createdAt: { gte: since } },
         include: { user: true },
         orderBy: { createdAt: "desc" },
-        take: 5000,
+        take: 2000,
       });
       return {
         title: "Auditoría mensual",

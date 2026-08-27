@@ -14,7 +14,7 @@ export default async function TeamPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-slate-900">Mi equipo</h1>
+        <h1 className="page-title text-xl font-bold text-slate-900 sm:text-2xl">Mi equipo</h1>
         <p className="text-sm text-slate-500">
           Funcionarios de {user.dependencyName ?? "su dependencia"} que cargan documentos
           al flujo de aprobación

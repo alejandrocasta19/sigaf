@@ -11,7 +11,7 @@ export default async function LoansPage() {
     redirect("/dashboard");
   }
 
-  const loans = await listLoans(user);
+  const { items: loans } = await listLoans(user);
   const serialized = loans.map((l) => ({
     id: l.id,
     code: l.code,
@@ -47,7 +47,7 @@ export default async function LoansPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-slate-900">Préstamos</h1>
+        <h1 className="page-title text-xl font-bold text-slate-900 sm:text-2xl">Préstamos</h1>
         <p className="text-sm text-slate-500">
           Solicitud → aprobación por Gestión Documental → entrega por 24 horas →
           devolución o vencimiento

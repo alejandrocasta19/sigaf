@@ -11,6 +11,7 @@ import {
   listSeries,
 } from "@/modules/archival-instruments";
 import { TrdAdminPanel } from "@/modules/archival-instruments/ui/trd-admin-panel";
+import { TrdVersionsPanel } from "@/modules/archival-instruments/ui/trd-versions-panel";
 import { GlossaryTip } from "@/modules/archival-instruments/ui/glossary-tip";
 import { Card, CardContent, CardHeader, CardTitle } from "@/shared/ui/card";
 import { Badge } from "@/shared/ui/badge";
@@ -39,7 +40,7 @@ export default async function TrdPage() {
           <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
             Prioridad archivística
           </p>
-          <h1 className="text-2xl font-bold text-slate-900">
+          <h1 className="page-title text-xl font-bold text-slate-900 sm:text-2xl">
             Gestión de las TRD
             <GlossaryTip term="TRD" />
           </h1>
@@ -93,6 +94,20 @@ export default async function TrdPage() {
         />
       )}
 
+      <TrdVersionsPanel
+        activeTrd={
+          activeTrd
+            ? {
+                name: activeTrd.name,
+                version: activeTrd.version,
+                lastUpdated: activeTrd.lastUpdated,
+                approvedAt: activeTrd.approvedAt,
+              }
+            : null
+        }
+        canAdmin={canAdmin}
+      />
+
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
         <Kpi label="Dependencias" value={stats.deps} icon={Building2} />
         <Kpi label="Series" value={stats.series} icon={Layers} />
@@ -101,7 +116,7 @@ export default async function TrdPage() {
         <Kpi label="Eliminaciones abiertas" value={stats.openDisposals} icon={Trash2} />
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-4">
+      <div className="grid gap-4 lg:grid-co ls-4">
         {stats.byDisposition.map((d) => (
           <Card key={d.name}>
             <CardContent className="py-4">
